@@ -63,10 +63,10 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y
       - name: Build installer
-        shell: bash
+        shell: cmd
         run: |
-          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" /DMyAppVersion=$VER installer/setup.iss
+          for /f "tokens=2 delims= " %v in ('findstr "^version:" pubspec.yaml') do set VER=%v
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=%VER% installer\setup.iss
       - name: Collect installer
         shell: bash
         run: |
