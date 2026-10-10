@@ -5,7 +5,7 @@
  * 用法：
  *   php build-ipk.php
  *       仅打包，产物输出到 openwrt/dist/：
- *         luci-app-afrp_{ver}-{rel}_all.ipk   （opkg 安装）
+ *         luci-app-afrp_{ver}_all.ipk   （opkg 安装）
  *         luci-app-afrp-{ver}.tar.gz          （通用压缩包，含 install.sh）
  *
  *   php build-ipk.php --verify
@@ -237,7 +237,7 @@ function build(): array
 
     // ---- control 元数据
     $control = "Package: luci-app-afrp\n"
-        . "Version: {$ver}-{$rel}\n"
+        . "Version: {$ver}\n"
         . "Depends: luci-base, uclient-fetch\n"
         . "Recommends: ca-bundle\n"
         . "SourceName: luci-app-afrp\n"
@@ -289,7 +289,7 @@ function build(): array
     $ipk = gzencode(tar_finish($ipkTar), 9);
     if ($ipk === false) { die_msg('.ipk 压缩失败'); }
 
-    $ipkName = "luci-app-afrp_{$ver}-{$rel}_all.ipk";
+    $ipkName = "luci-app-afrp_{$ver}_all.ipk";
     $tgzName = "luci-app-afrp-{$ver}.tar.gz";
     $ipkPath = $DIST . '/' . $ipkName;
     $tgzPath = $DIST . '/' . $tgzName;
@@ -311,7 +311,7 @@ function build(): array
     if ($tgzGz === false) { die_msg('tar.gz 压缩失败'); }
     if (@file_put_contents($tgzPath, $tgzGz) === false) { die_msg('写入失败: ' . $tgzPath); }
 
-    out("打包完成（v{$ver}-{$rel}，共 " . count($files) . " 个文件，{$installedKb} KB）：");
+    out("打包完成（v{$ver}，共 " . count($files) . " 个文件，{$installedKb} KB）：");
     foreach ([[$ipkPath, $ipkName], [$tgzPath, $tgzName]] as $e) {
         [$p, $n] = $e;
         out(sprintf('  %s  %d 字节  sha256=%s', $n, (int)filesize($p), (string)hash_file('sha256', $p)));
@@ -360,7 +360,7 @@ function verify(array $b): bool
 
     if (!$errs) {
         $control = $ctlFiles['./control']['data'] ?? '';
-        foreach (['Package: luci-app-afrp', "Version: {$b['ver']}-{$b['rel']}", 'Architecture: all', 'Depends: '] as $need) {
+        foreach (['Package: luci-app-afrp', "Version: {$b['ver']}", 'Architecture: all', 'Depends: '] as $need) {
             if (strpos($control, $need) === false) { $errs[] = 'control 缺少字段: ' . $need; }
         }
         if (strpos($ctlFiles['./conffiles']['data'] ?? '', '/etc/afrp/config.json') === false) { $errs[] = 'conffiles 缺少 /etc/afrp/config.json'; }
@@ -534,7 +534,7 @@ function publish(string $webRoot, string $siteUrl, string $date, ?string $notes,
               . ' frpc core, and monitor connection status from LuCI.';
 
     $pkgIndex = "Package: luci-app-afrp\n"
-        . "Version: {$b['ver']}-{$b['rel']}\n"
+        . "Version: {$b['ver']}\n"
         . "Depends: luci-base, uclient-fetch\n"
         . "Recommends: ca-bundle\n"
         . "SourceName: luci-app-afrp\n"
