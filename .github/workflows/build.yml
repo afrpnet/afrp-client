@@ -121,7 +121,7 @@ jobs:
 
   build-linux-amd64:
     needs: create-release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -162,7 +162,7 @@ jobs:
 
   build-linux-arm64:
     needs: create-release
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
 
