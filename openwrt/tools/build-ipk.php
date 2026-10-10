@@ -311,8 +311,33 @@ function build(): array
     if ($tgzGz === false) { die_msg('tar.gz 压缩失败'); }
     if (@file_put_contents($tgzPath, $tgzGz) === false) { die_msg('写入失败: ' . $tgzPath); }
 
+    // ---- opkg Packages 索引（用于 GitHub Release 作为 opkg 源）
+    $desc    = 'AFRP NAT traversal support and management by afrp.net.';
+    $descCont = ' Manage frpc tunnels with OIDC authentication, auto-update' . "\n"
+              . ' frpc core, and monitor connection status from LuCI.';
+    $ipkSize = (int)filesize($ipkPath);
+    $ipkSha  = (string)hash_file('sha256', $ipkPath);
+    $pkgIndex = "Package: luci-app-afrp\n"
+        . "Version: {$ver}\n"
+        . "Depends: luci-base, uclient-fetch\n"
+        . "Recommends: ca-bundle\n"
+        . "SourceName: luci-app-afrp\n"
+        . "License: MIT\n"
+        . "Section: luci\n"
+        . "Architecture: all\n"
+        . "Installed-Size: {$installedKb}\n"
+        . "Filename: {$ipkName}\n"
+        . "Size: {$ipkSize}\n"
+        . "SHA256: {$ipkSha}\n"
+        . "Description: {$desc}\n"
+        . "{$descCont}\n";
+    $pkgPath = $DIST . '/Packages';
+    if (@file_put_contents($pkgPath, $pkgIndex) === false) { die_msg('写入失败: ' . $pkgPath); }
+    $pkgGzPath = $DIST . '/Packages.gz';
+    @file_put_contents($pkgGzPath, gzencode($pkgIndex, 9));
+
     out("打包完成（v{$ver}，共 " . count($files) . " 个文件，{$installedKb} KB）：");
-    foreach ([[$ipkPath, $ipkName], [$tgzPath, $tgzName]] as $e) {
+    foreach ([[$ipkPath, $ipkName], [$tgzPath, $tgzName], [$pkgPath, 'Packages'], [$pkgGzPath, 'Packages.gz']] as $e) {
         [$p, $n] = $e;
         out(sprintf('  %s  %d 字节  sha256=%s', $n, (int)filesize($p), (string)hash_file('sha256', $p)));
     }
@@ -324,6 +349,7 @@ function build(): array
 
 function verify(array $b): bool
 {
+    global $DIST;
     $ok = true;
     $errs = [];
     out('');
@@ -404,6 +430,23 @@ function verify(array $b): bool
     }
 
     $errs = array_merge($errs, $tgzErr);
+
+    // ---- Packages 索引
+    $pkgPath = $DIST . '/Packages';
+    $pkgGzPath = $DIST . '/Packages.gz';
+    $pkgErr = [];
+    if (!is_file($pkgPath)) {
+        $pkgErr[] = 'Packages 文件不存在';
+    } else {
+        $pkgContent = (string)file_get_contents($pkgPath);
+        foreach (['Package: luci-app-afrp', "Version: {$b['ver']}", 'Architecture: all', "Filename: luci-app-afrp_{$b['ver']}_all.ipk"] as $need) {
+            if (strpos($pkgContent, $need) === false) { $pkgErr[] = 'Packages 缺少: ' . $need; }
+        }
+        if (!is_file($pkgGzPath)) { $pkgErr[] = 'Packages.gz 不存在'; }
+        if (!$pkgErr) { out('[Packages] 索引字段完整 + Packages.gz  ✓'); }
+    }
+
+    $errs = array_merge($errs, $pkgErr);
     if ($errs) {
         $ok = false;
         foreach ($errs as $e) { fwrite(STDERR, '  ✗ ' . $e . "\n"); }

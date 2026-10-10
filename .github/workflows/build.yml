@@ -234,6 +234,8 @@ jobs:
           mkdir -p ../dist
           cp dist/*.ipk ../dist/
           cp dist/*.tar.gz ../dist/
+          cp dist/Packages ../dist/
+          cp dist/Packages.gz ../dist/
       - name: Upload to Release
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
