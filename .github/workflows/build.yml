@@ -231,14 +231,26 @@ jobs:
         run: |
           cd openwrt
           php tools/build-ipk.php --verify
-          mkdir -p ../dist
+          mkdir -p ../dist ../opkg
           cp dist/*.ipk ../dist/
           cp dist/*.tar.gz ../dist/
           cp dist/Packages ../dist/
           cp dist/Packages.gz ../dist/
+          cp dist/*.ipk ../opkg/
+          cp dist/Packages ../opkg/
+          cp dist/Packages.gz ../opkg/
       - name: Upload to Release
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           gh release upload "v$VER" dist/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Commit opkg feed for GitHub Pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add opkg/
+          git diff --cached --quiet || git commit -m "chore: update opkg feed for GitHub Pages"
+          git push
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
