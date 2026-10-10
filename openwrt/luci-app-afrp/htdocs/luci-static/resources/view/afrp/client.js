@@ -35,7 +35,17 @@ function writeConfig(cfg) {
 }
 
 return view.extend({
+	handleSave: function() {
+		return writeConfig(this._cfg || {});
+	},
+	handleSaveApply: function() {
+		return this.handleSave().then(function() {
+			ui.addNotification(null, E('p', {}, _('配置已保存并应用')));
+			window.location.reload();
+		});
+	},
 	render: function() {
+		var self = this;
 		var cfg = {};
 		var lastServers = [];
 		var lastSite = DEFAULT_BASE;
@@ -46,7 +56,6 @@ return view.extend({
 		var chkEnabled = E('input', { type: 'checkbox' });
 		chkEnabled.addEventListener('change', function() {
 			cfg.enabled = chkEnabled.checked;
-			writeConfig(cfg);
 		});
 		var inpUsername = E('input', { type: 'text', class: 'cbi-input-text', placeholder: _('官网账号用户名或邮箱') });
 		var wrapPassword = E('div', { style: 'display:flex;align-items:center;gap:8px' });
@@ -132,6 +141,7 @@ return view.extend({
 
 		return readConfig().then(function(c) {
 			cfg = c;
+			self._cfg = cfg;
 			chkEnabled.checked = !!cfg.enabled;
 			inpUsername.value = cfg.username || '';
 			inpPassword.value = cfg.password || '';
@@ -360,7 +370,6 @@ return view.extend({
 			lastServers = servers;
 			lastSite = site;
 			cfg.import_servers = servers;
-			writeConfig(cfg);
 
 			srvArea.textContent = '';
 			var sel = E('select', { class: 'cbi-input-select', style: 'min-width:280px' });
@@ -377,20 +386,14 @@ return view.extend({
 			}
 			sel.value = String(selectedIdx);
 
-			var btn = E('button', { class: 'cbi-button cbi-button-apply' }, [ _('使用此服务器') ]);
-			btn.addEventListener('click', function() {
+			sel.addEventListener('change', function() {
 				var sv = servers[parseInt(sel.value, 10)] || null;
 				if (!sv) return;
 				cfg.server_addr = String(sv.addr || '');
 				cfg.server_port = String(sv.port || 7000);
-				cfg.enabled = true;
-				chkEnabled.checked = true;
-				writeConfig(cfg).then(function() {
-					resultDiv.textContent = _('已选择服务器：') + (sv.name || sv.addr) +
-						('（' + sv.addr + ':' + sv.port + '）。');
-				});
 			});
-			srvArea.appendChild(E('div', { style: 'display:flex;align-items:center;gap:8px' }, [ sel, btn ]));
+
+			srvArea.appendChild(sel);
 		}
 	}
 });
