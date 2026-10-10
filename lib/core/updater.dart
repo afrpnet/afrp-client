@@ -251,7 +251,7 @@ UpdateEntry? chooseEntry(
   UpdateEntry? pick(Iterable<UpdateEntry> src) {
     UpdateEntry? best;
     for (final e in src) {
-      if (wantArch != null && e.arch.isNotEmpty && _normalizeArch(e.arch) != wantArch) {
+      if (wantArch != null && e.arch.isNotEmpty && _normalizeArch(e.arch) != 'all' && _normalizeArch(e.arch) != wantArch) {
         continue;
       }
       if (best == null) {

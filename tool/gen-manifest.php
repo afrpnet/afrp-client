@@ -18,6 +18,8 @@ $date = date('Y-m-d');
 $rules = [
     ['~^afrp-oidc-client_([0-9.]+)_windows_amd64_setup\.exe$~', 'windows', 'installer', 'amd64', 'Windows 10/11 x64 安装版（自动配置 Defender 排除）'],
     ['~^afrp-oidc-client_([0-9.]+)_windows_amd64_portable\.zip$~', 'windows', 'portable', 'amd64', 'Windows 10/11 x64 免安装版（解压即用）'],
+    ['~^afrp-oidc-client_([0-9.]+)_macos_amd64\.zip$~', 'macos', 'portable', 'amd64', 'macOS x64 免安装版（解压后运行 AFRP OIDC Client）'],
+    ['~^afrp-oidc-client_([0-9.]+)_macos_arm64\.zip$~', 'macos', 'portable', 'arm64', 'macOS Apple Silicon 免安装版'],
     ['~^afrp-oidc-client_([0-9.]+)_linux_amd64_portable\.tar\.gz$~', 'linux', 'portable', 'amd64', 'Linux x86_64 免安装版（解压后运行 afrp-oidc.sh）'],
     ['~^afrp-oidc-client_([0-9.]+)_linux_amd64\.appimage$~', 'linux', 'appimage', 'amd64', 'Linux x86_64 AppImage（chmod +x 后直接运行）'],
     ['~^afrp-oidc-client_([0-9.]+)_linux_arm64_portable\.tar\.gz$~', 'linux', 'portable', 'arm64', 'Linux ARM64 免安装版（解压后运行 afrp-oidc.sh）'],
