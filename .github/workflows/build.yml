@@ -63,10 +63,10 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y
       - name: Build installer
-        shell: cmd
+        shell: powershell
         run: |
-          for /f "tokens=2 delims= " %v in ('findstr "^version:" pubspec.yaml') do set VER=%v
-          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=%VER% installer\setup.iss
+          $VER = (Get-Content pubspec.yaml | Select-String '^version:' | ForEach-Object { ($_ -replace '^version:\s+([0-9]+\.[0-9]+\.[0-9]+).*','$1') })
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$VER installer\setup.iss
       - name: Collect installer
         shell: bash
         run: |
