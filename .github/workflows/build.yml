@@ -248,7 +248,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add opkg/
-          git diff --cached --quiet || git commit -m "chore: update opkg feed for GitHub Pages"
-          git push
+          git diff --cached --quiet || {
+            git commit -m "chore: update opkg feed for GitHub Pages"
+            for i in 1 2 3; do
+              git pull --rebase origin main && git push && break
+              echo "push 冲突，重试 ($i/3)…"
+              sleep 2
+            done
+          }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
