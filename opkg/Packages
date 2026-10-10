@@ -8,8 +8,8 @@ Section: luci
 Architecture: all
 Installed-Size: 55
 Filename: luci-app-afrp_1.1.0_all.ipk
-Size: 16745
-SHA256: 81d3cc40a78b29aab09c0545a4e5bb79b5a09d44a330a0c94a591e4f0783255b
+Size: 16804
+SHA256: 24c80a8855b739f283a4d07b77ef8b0e41ce033b32da65d76d6cec388213dc6f
 Description: AFRP NAT traversal support and management by afrp.net.
  Manage frpc tunnels with OIDC authentication, auto-update
  frpc core, and monitor connection status from LuCI.
