@@ -1,0 +1,189 @@
+#!/usr/bin/ucode
+// 由 JSON 配置 /etc/afrp/config.json 生成 frpc TOML 配置（/var/etc/afrp.toml）
+
+import { readfile, writefile, unlink } from 'fs';
+
+const CONF = '/etc/afrp/config.json';
+const OUT = '/var/etc/afrp.toml';
+
+function die(msg) {
+	fprintf(stderr, 'afrp: %s\n', msg);
+	exit(1);
+}
+
+function esc(s) {
+	if (s == null) return '';
+	s = '' + s;
+	s = replace(s, regexp('\\\\'), '\\\\\\\\');
+	s = replace(s, regexp('"'), '\\\\"');
+	return s;
+}
+
+function str(v) {
+	return v == null ? '' : '' + v;
+}
+
+function trimStr(s) {
+	s = '' + (s || '');
+	s = replace(s, regexp('^[ \t\n\r]+'), '');
+	s = replace(s, regexp('[ \t\n\r]+$'), '');
+	return s;
+}
+
+function isPort(v) {
+	let s = trimStr(str(v));
+	if (s == '') return false;
+	if (match(s, regexp('^[0-9]+$')) == null) return false;
+	let n = int(s);
+	return n >= 1 && n <= 65535;
+}
+
+function shq(s) {
+	s = str(s);
+	if (index(s, "'") >= 0) return null;
+	return "'" + s + "'";
+}
+
+let raw = null;
+try {
+	raw = readfile(CONF);
+} catch (e) {
+	die('读取 ' + CONF + ' 失败');
+}
+if (raw == null || trimStr(raw) == '') {
+	die('配置文件为空');
+}
+
+let cfg = null;
+try {
+	cfg = json(raw);
+} catch (e) {
+	die('JSON 解析失败');
+}
+if (type(cfg) != 'object') {
+	die('配置格式错误');
+}
+
+if (cfg.enabled != true) {
+	die('服务未启用');
+}
+
+let serverAddr = trimStr(str(cfg.server_addr));
+let serverPort = trimStr(str(cfg.server_port));
+if (serverPort == '') serverPort = '7000';
+let clientId = trimStr(str(cfg.client_id));
+let clientSecret = str(cfg.client_secret);
+let tokenEndpoint = trimStr(str(cfg.token_endpoint));
+if (tokenEndpoint == '') tokenEndpoint = 'https://www.afrp.net/oidc/token.php';
+let audience = trimStr(str(cfg.audience));
+if (audience == '') audience = 'afrp.net';
+let scope = trimStr(str(cfg.scope));
+if (scope == '') scope = 'afrp';
+
+if (serverAddr == '') die('未填写服务器地址');
+if (clientId == '') die('未填写 Client ID');
+if (clientSecret == '') die('未填写 Client Secret');
+if (!isPort(serverPort)) die('服务器端口 "' + serverPort + '" 无效');
+
+let out = '# 由 luci-app-afrp 自动生成，请勿手动修改\n';
+out += 'serverAddr = "' + esc(serverAddr) + '"\n';
+out += 'serverPort = ' + serverPort + '\n';
+out += 'user = "' + esc(clientId) + '"\n';
+out += 'auth.method = "oidc"\n';
+out += 'auth.oidc.clientID = "' + esc(clientId) + '"\n';
+out += 'auth.oidc.clientSecret = "' + esc(clientSecret) + '"\n';
+out += 'auth.oidc.tokenEndpointURL = "' + esc(tokenEndpoint) + '"\n';
+out += 'auth.oidc.audience = "' + esc(audience) + '"\n';
+if (scope != '') {
+	out += 'auth.oidc.scope = "' + esc(scope) + '"\n';
+}
+
+let proxies = cfg.proxies;
+if (type(proxies) == 'array') {
+	for (let i = 0; i < length(proxies); i++) {
+		let p = proxies[i];
+		if (type(p) != 'object') continue;
+		if (p.enabled != true && p.enabled != 1) continue;
+
+		let name = trimStr(str(p.name));
+		if (name == '') {
+			fprintf(stderr, 'afrp: 隧道 #%d 未填写名称，已跳过\n', i);
+			continue;
+		}
+
+		let ptype = trimStr(str(p.type));
+		if (ptype == '') ptype = 'tcp';
+
+		let validTypes = ['tcp', 'udp', 'http', 'https', 'stcp', 'sudp', 'xtcp'];
+		let valid = false;
+		for (let j = 0; j < length(validTypes); j++) {
+			if (validTypes[j] == ptype) { valid = true; break; }
+		}
+		if (!valid) {
+			fprintf(stderr, 'afrp: 隧道 "%s" 类型 "%s" 不受支持，已跳过\n', name, ptype);
+			continue;
+		}
+
+		let localIp = trimStr(str(p.local_ip));
+		if (localIp == '') localIp = '127.0.0.1';
+		let localPort = trimStr(str(p.local_port));
+		let remotePort = trimStr(str(p.remote_port));
+		let subdomain = trimStr(str(p.subdomain));
+		let customDomain = trimStr(str(p.custom_domain));
+		let secretKey = str(p.secret_key);
+
+		if (!isPort(localPort)) {
+			fprintf(stderr, 'afrp: 隧道 "%s" 本地端口 "%s" 无效，已跳过\n', name, localPort);
+			continue;
+		}
+		if (remotePort != '' && !isPort(remotePort)) {
+			fprintf(stderr, 'afrp: 隧道 "%s" 远程端口 "%s" 无效，已跳过\n', name, remotePort);
+			continue;
+		}
+
+		out += '\n[[proxies]]\n';
+		out += 'name = "' + esc(name) + '"\n';
+		out += 'type = "' + ptype + '"\n';
+		out += 'localIP = "' + esc(localIp) + '"\n';
+		out += 'localPort = ' + localPort + '\n';
+
+		if (ptype == 'http' || ptype == 'https') {
+			if (customDomain != '') {
+				out += 'customDomains = ["' + esc(customDomain) + '"]\n';
+			} else if (subdomain != '') {
+				out += 'subdomain = "' + esc(subdomain) + '"\n';
+			}
+		} else if (ptype == 'stcp' || ptype == 'sudp' || ptype == 'xtcp') {
+			if (secretKey != '') {
+				out += 'secretKey = "' + esc(secretKey) + '"\n';
+			}
+		} else if (ptype == 'tcp' || ptype == 'udp') {
+			if (remotePort != '') {
+				out += 'remotePort = ' + remotePort + '\n';
+			}
+		}
+	}
+}
+
+let tmp = OUT + '.tmp';
+try {
+	writefile(tmp, out);
+} catch (e) {
+	die('写入临时配置失败');
+}
+
+let qs = shq(tmp);
+let qo = shq(OUT);
+if (qs == null || qo == null) {
+	try { unlink(tmp); } catch (e) {}
+	die('内部错误：路径包含非法字符');
+}
+
+let ret = system('mv -f ' + qs + ' ' + qo);
+if (ret != 0) {
+	try { unlink(tmp); } catch (e) {}
+	die('替换 ' + OUT + ' 失败');
+}
+
+system('chmod 600 ' + qo);
+exit(0);

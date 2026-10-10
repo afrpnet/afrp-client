@@ -1,0 +1,335 @@
+#!/usr/bin/ucode
+// AFRP frpc 核心更新工具（由 LuCI「运行状态」页调用）
+// 用法：
+//   update-core status
+//   update-core check <base_url> <arch>
+//   update-core install <url> <sha256> [file]
+// 清单格式与 App 端 updater 一致：/download/manifest.json
+// 条目字段 id kind platform channel arch version file url sha256 size date notes latest
+
+import { popen, readfile } from 'fs';
+
+function run(cmd) {
+	let fd = popen(cmd, 'r');
+	if (fd == null) {
+		return '';
+	}
+	let out = fd.read('all');
+	fd.close();
+	return out == null ? '' : out;
+}
+
+function found(haystack, needle) {
+	let i = index(haystack, needle);
+	return (i != null && i >= 0);
+}
+
+function okCmd(cmd) {
+	let h = run(cmd + ' 2>/dev/null && echo AFRP_CMD_OK || echo AFRP_CMD_FAIL');
+	return found(h, 'AFRP_CMD_OK');
+}
+
+function str(v) {
+	return v == null ? '' : '' + v;
+}
+
+function listHas(arr, v) {
+	for (let i = 0; i < length(arr); i++) {
+		if (arr[i] == v) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function emit(res) {
+	printf('%J\n', res);
+}
+
+function fail(msg) {
+	emit({ ok: false, error: msg });
+	exit(1);
+}
+
+// 单引号包裹参数；若含单引号则返回 null
+function shq(s) {
+	s = str(s);
+	if (found(s, "'")) {
+		return null;
+	}
+	return "'" + s + "'";
+}
+
+let ARCH_RULES = [
+	['x86_64', 'amd64'],
+	['i386', '386'],
+	['i486', '386'],
+	['i586', '386'],
+	['i686', '386'],
+	['x86', '386'],
+	['aarch64', 'arm64'],
+	['arm', 'arm'],
+	['mips64el', 'mips64le'],
+	['mips64', 'mips64'],
+	['mipsel', 'mipsle'],
+	['mips', 'mips'],
+	['riscv64', 'riscv64'],
+	['loongarch64', 'loong64'],
+	['loongarch', 'loong64'],
+	['ppc64le', 'ppc64le'],
+	['ppc64', 'ppc64'],
+	['s390x', 's390x'],
+	['s390', 's390']
+];
+
+function archFromName(name) {
+	let n = trim(str(name));
+	if (n == '') {
+		return '';
+	}
+	for (let i = 0; i < length(ARCH_RULES); i++) {
+		if (match(n, regexp('^' + ARCH_RULES[i][0])) != null) {
+			return ARCH_RULES[i][1];
+		}
+	}
+	return '';
+}
+
+function detectArch() {
+	let rel = null;
+	try {
+		rel = readfile('/etc/openwrt_release');
+	} catch (e) {
+		rel = null;
+	}
+	if (rel != null) {
+		let m = match(rel, regexp("DISTRIB_ARCH='([^']+)'"));
+		if (m != null) {
+			let a = archFromName(m[1]);
+			if (a != '') {
+				return a;
+			}
+		}
+	}
+	return archFromName(trim(run('uname -m')));
+}
+
+function readVersion() {
+	if (!okCmd('test -x /usr/bin/frpc')) {
+		return '';
+	}
+	let out = run('/usr/bin/frpc -v 2>&1');
+	let m = match(out, regexp('([0-9]+[.][0-9]+[.][0-9]+)'));
+	return m == null ? '' : m[1];
+}
+
+function cmdStatus() {
+	let installed = okCmd('test -x /usr/bin/frpc');
+	let running = okCmd('/etc/init.d/afrp running');
+	emit({
+		ok: true,
+		installed: installed,
+		path: '/usr/bin/frpc',
+		version: installed ? readVersion() : '',
+		running: running,
+		arch: detectArch()
+	});
+}
+
+function cmdCheck(base, arch) {
+	base = trim(str(base));
+	if (match(base, regexp('^https?://')) == null) {
+		fail('更新地址无效：' + base);
+	}
+	if (found(base, "'")) {
+		fail('更新地址包含非法字符');
+	}
+	base = replace(base, regexp('/+$'), '');
+
+	let detArch = trim(str(arch));
+	if (detArch == '') {
+		detArch = detectArch();
+	}
+
+	let manifestUrl = base + '/download/manifest.json';
+	let q = shq(manifestUrl);
+	if (q == null) {
+		fail('更新地址包含非法字符');
+	}
+	let raw = run('uclient-fetch -q -T 30 -O - ' + q + ' 2>/dev/null');
+	if (trim(raw) == '') {
+		fail('无法获取更新清单，请检查路由器网络或更新地址');
+	}
+
+	let man = null;
+	try {
+		man = json(raw);
+	} catch (e) {
+		fail('更新清单解析失败（站点返回的不是有效 JSON）');
+	}
+	if (type(man) != 'object' || type(man.items) != 'array') {
+		fail('更新清单格式不正确');
+	}
+
+	let availableArch = [];
+	let candidates = [];
+	for (let i = 0; i < length(man.items); i++) {
+		let it = man.items[i];
+		if (type(it) != 'object') {
+			continue;
+		}
+		if (str(it.kind) != 'frpc' || str(it.platform) != 'openwrt') {
+			continue;
+		}
+		let ia = str(it.arch);
+		if (ia != '' && !listHas(availableArch, ia)) {
+			availableArch[length(availableArch)] = ia;
+		}
+		if (it.latest != true) {
+			continue;
+		}
+		if (str(it.url) == '') {
+			continue;
+		}
+		if (ia != '' && detArch != '' && ia != detArch) {
+			continue;
+		}
+		candidates[length(candidates)] = {
+			id: str(it.id),
+			version: str(it.version),
+			url: str(it.url),
+			sha256: str(it.sha256),
+			file: str(it.file),
+			size: it.size == null ? 0 : it.size,
+			date: str(it.date),
+			notes: str(it.notes),
+			arch: ia
+		};
+	}
+
+	emit({
+		ok: true,
+		base: base,
+		manifest_url: manifestUrl,
+		arch: detArch,
+		current_version: readVersion(),
+		candidates: candidates,
+		available_arch: availableArch
+	});
+}
+
+function cmdInstall(url, sha256, fname) {
+	url = trim(str(url));
+	sha256 = str(sha256);
+	fname = trim(str(fname));
+
+	if (match(url, regexp('^https?://')) == null) {
+		fail('下载地址无效');
+	}
+	if (match(sha256, regexp('^[0-9a-fA-F]{64}$')) == null) {
+		fail('SHA-256 校验值无效，已拒绝安装');
+	}
+	if (fname != '' && match(fname, regexp('^[A-Za-z0-9][A-Za-z0-9._-]*$')) == null) {
+		fail('文件名无效');
+	}
+	let qu = shq(url);
+	if (qu == null) {
+		fail('下载地址包含非法字符');
+	}
+
+	okCmd('rm -rf /tmp/afrp');
+	if (!okCmd('mkdir -p /tmp/afrp')) {
+		fail('无法创建临时目录');
+	}
+
+	let dl = '/tmp/afrp/download.bin';
+	if (!okCmd('uclient-fetch -q -T 300 -O ' + shq(dl) + ' ' + qu)) {
+		fail('下载 frpc 失败，请检查路由器网络或更新地址');
+	}
+	if (!okCmd('test -s ' + shq(dl))) {
+		fail('下载到的文件为空');
+	}
+
+	let out = run('sha256sum ' + shq(dl) + ' 2>/dev/null');
+	let m = match(out, regexp('^[0-9a-fA-F]{64}'));
+	if (m == null) {
+		fail('无法计算文件校验值（系统缺少 sha256sum）');
+	}
+	if (match(m[0], regexp('^' + sha256 + '$', 'i')) == null) {
+		fail('SHA-256 校验失败，文件不完整或已被篡改');
+	}
+
+	let src = dl;
+	if (fname != '' && match(fname, regexp('[.](tar[.]gz|tgz)$', 'i')) != null) {
+		if (!okCmd('mkdir -p /tmp/afrp/x')) {
+			fail('无法创建解压目录');
+		}
+		if (!okCmd('tar -xzf ' + shq(dl) + ' -C /tmp/afrp/x')) {
+			fail('解压 frpc 压缩包失败');
+		}
+		let hit = trim(run('find /tmp/afrp/x -type f -name frpc 2>/dev/null | head -n1'));
+		if (hit == '') {
+			hit = trim(run('find /tmp/afrp/x -type f -name "frpc*" 2>/dev/null | head -n1'));
+		}
+		if (hit == '') {
+			fail('压缩包中未找到 frpc 可执行文件');
+		}
+		src = hit;
+	}
+
+	let qs = shq(src);
+	if (qs == null) {
+		fail('内部错误：路径包含非法字符');
+	}
+
+	// 先放到目标分区并验证可运行（架构不符时 exec 会失败），再原子替换
+	if (!okCmd('cp -f ' + qs + ' /usr/bin/frpc.new')) {
+		fail('写入新核心失败（磁盘空间不足？）');
+	}
+	if (!okCmd('chmod 755 /usr/bin/frpc.new')) {
+		fail('设置执行权限失败');
+	}
+	let probe = run('/usr/bin/frpc.new -v 2>&1');
+	if (match(probe, regexp('([0-9]+[.][0-9]+[.][0-9]+)')) == null) {
+		okCmd('rm -f /usr/bin/frpc.new');
+		fail('新核心无法运行（通常是架构不匹配），请确认设备架构后重试');
+	}
+
+	let hadOld = okCmd('test -e /usr/bin/frpc');
+	if (hadOld && !okCmd('cp -f /usr/bin/frpc /usr/bin/frpc.bak')) {
+		okCmd('rm -f /usr/bin/frpc.new');
+		fail('备份原核心失败');
+	}
+	if (!okCmd('mv -f /usr/bin/frpc.new /usr/bin/frpc')) {
+		fail('替换 frpc 失败');
+	}
+
+	let nv = readVersion();
+	if (nv == '') {
+		if (hadOld) {
+			okCmd('mv -f /usr/bin/frpc.bak /usr/bin/frpc');
+			fail('替换后校验失败，已回滚旧版本');
+		}
+		okCmd('rm -f /usr/bin/frpc');
+		fail('替换后校验失败，已移除新核心');
+	}
+	okCmd('rm -f /usr/bin/frpc.bak');
+	okCmd('rm -rf /tmp/afrp');
+	emit({ ok: true, version: nv, path: '/usr/bin/frpc' });
+}
+
+let cmd = length(ARGV) >= 1 ? str(ARGV[0]) : 'status';
+let args = [];
+for (let i = 1; i < length(ARGV); i++) {
+	args[length(args)] = ARGV[i];
+}
+
+if (cmd == 'status') {
+	cmdStatus();
+} else if (cmd == 'check') {
+	cmdCheck(args[0], args[1]);
+} else if (cmd == 'install') {
+	cmdInstall(args[0], args[1], args[2]);
+} else {
+	fail('未知操作：' + cmd);
+}

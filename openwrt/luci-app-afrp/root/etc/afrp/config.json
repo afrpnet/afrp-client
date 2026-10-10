@@ -1,0 +1,16 @@
+{
+	"enabled": false,
+	"username": "",
+	"password": "",
+	"server_addr": "",
+	"server_port": "7000",
+	"client_id": "",
+	"client_secret": "",
+	"token_endpoint": "https://www.afrp.net/oidc/token.php",
+	"audience": "afrp.net",
+	"scope": "afrp",
+	"update_base": "",
+	"core_arch": "",
+	"import_servers": [],
+	"proxies": []
+}

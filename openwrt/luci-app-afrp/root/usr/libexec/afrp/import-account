@@ -1,0 +1,213 @@
+#!/usr/bin/ucode
+// AFRP 官网账号导入（由 LuCI「运行状态」页调用）
+// 拉取站点公开配置 → 可选登录 → 服务器列表 → 可选重置 Client Secret。
+// 凭据经临时文件传入（口令不出现于命令行参数）：
+//   /tmp/afrp-import.json  {"site":"https://...","rotate":true|false}
+//   /tmp/afrp-login.json   {"identity":"...","password":"...","device":"..."}
+// 无论成败都会删除两个临时文件。
+
+import { popen, readfile, unlink } from 'fs';
+
+const REQ = '/tmp/afrp-import.json';
+const LOGIN = '/tmp/afrp-login.json';
+
+function run(cmd) {
+	let fd = popen(cmd, 'r');
+	if (fd == null) {
+		return '';
+	}
+	let out = fd.read('all');
+	fd.close();
+	return out == null ? '' : out;
+}
+
+function found(haystack, needle) {
+	let i = index(haystack, needle);
+	return (i != null && i >= 0);
+}
+
+function str(v) {
+	return v == null ? '' : '' + v;
+}
+
+// 从 catch 到的值中提取可读信息（对象做字符串拼接在 ucode 中不可靠）
+function errMsg(e) {
+	if (type(e) == 'string') {
+		return str(e);
+	}
+	if (type(e) == 'object' && e.msg != null) {
+		return str(e.msg);
+	}
+	return '未知错误';
+}
+
+function shq(s) {
+	s = str(s);
+	if (found(s, "'")) {
+		return null;
+	}
+	return "'" + s + "'";
+}
+
+function emit(res) {
+	printf('%J\n', res);
+}
+
+function cleanup() {
+	try {
+		unlink(REQ);
+	} catch (e) {}
+	try {
+		unlink(LOGIN);
+	} catch (e) {}
+}
+
+function doImport() {
+	let reqRaw = null;
+	try {
+		reqRaw = readfile(REQ);
+	} catch (e) {
+		reqRaw = null;
+	}
+	if (reqRaw == null || trim(reqRaw) == '') {
+		return { ok: false, error: '缺少导入请求数据' };
+	}
+
+	let req = null;
+	try {
+		req = json(reqRaw);
+	} catch (e) {
+		req = null;
+	}
+	if (type(req) != 'object') {
+		return { ok: false, error: '导入请求数据格式错误' };
+	}
+
+	let site = trim(str(req.site));
+	if (match(site, regexp('^https?://')) == null) {
+		return { ok: false, error: '官网地址无效（需以 http:// 或 https:// 开头）' };
+	}
+	site = replace(site, regexp('/+$'), '');
+	let qs = shq(site);
+	if (qs == null) {
+		return { ok: false, error: '官网地址包含非法字符' };
+	}
+
+	// 1) 站点公开配置（顺带验证站点可达）
+	let cfgRaw = run('uclient-fetch -q -T 30 -O - ' + qs + '/api/config.php 2>/dev/null');
+	let cfg = null;
+	try {
+		cfg = json(cfgRaw);
+	} catch (e) {
+		cfg = null;
+	}
+	if (type(cfg) != 'object' || type(cfg.data) != 'object') {
+		return { ok: false, error: '无法获取站点配置，请检查官网地址与路由器网络' };
+	}
+
+	let result = {
+		ok: true,
+		site: site,
+		config: cfg.data,
+		user: null,
+		servers: [],
+		secret: '',
+		secret_client_id: '',
+		rotate_error: '',
+		token_expires_at: ''
+	};
+
+	// 2) 登录（可选）
+	let loginRaw = null;
+	try {
+		loginRaw = readfile(LOGIN);
+	} catch (e) {
+		loginRaw = null;
+	}
+	if (loginRaw == null || trim(loginRaw) == '') {
+		return result;
+	}
+
+	let lr = run('uclient-fetch -q -T 30 --post-file ' + shq(LOGIN) + ' -O - ' + qs + '/api/login.php 2>/dev/null');
+	try {
+		unlink(LOGIN);
+	} catch (e) {}
+
+	let lj = null;
+	try {
+		lj = json(lr);
+	} catch (e) {
+		lj = null;
+	}
+	if (type(lj) != 'object') {
+		return { ok: false, error: '登录失败：无法连接站点或站点返回数据异常' };
+	}
+	if (lj.ok != true) {
+		let msg = str(lj.message);
+		return {
+			ok: false,
+			error: msg != '' ? msg : '登录失败（账号或密码错误）',
+			error_code: str(lj.error)
+		};
+	}
+	if (type(lj.data) != 'object') {
+		return { ok: false, error: '登录失败：站点返回数据异常' };
+	}
+
+	let token = str(lj.data.token);
+	if (match(token, regexp('^[A-Za-z0-9_]+$')) == null) {
+		return { ok: false, error: '登录成功但令牌格式异常，已中止导入' };
+	}
+	result.token_expires_at = str(lj.data.expires_at);
+	if (type(lj.data.user) == 'object') {
+		result.user = lj.data.user;
+	}
+
+	let authHeader = shq('Authorization: Bearer ' + token);
+
+	// 3) 服务器列表
+	let srvRaw = run('uclient-fetch -q -T 30 --header ' + authHeader + ' -O - ' + qs + '/api/servers.php 2>/dev/null');
+	let sj = null;
+	try {
+		sj = json(srvRaw);
+	} catch (e) {
+		sj = null;
+	}
+	if (type(sj) == 'object' && sj.ok == true && type(sj.data) == 'object' && type(sj.data.servers) == 'array') {
+		result.servers = sj.data.servers;
+	}
+
+	// 4) 可选重置 Client Secret（旧密钥立即失效）
+	if (req.rotate == true) {
+		let rRaw = run('uclient-fetch -q -T 30 --post-data ' + shq('') + ' --header ' + authHeader + ' -O - ' + qs + '/api/secret.php 2>/dev/null');
+		let rj = null;
+		try {
+			rj = json(rRaw);
+		} catch (e) {
+			rj = null;
+		}
+		if (type(rj) == 'object' && rj.ok == true && type(rj.data) == 'object') {
+			result.secret = str(rj.data.client_secret);
+			result.secret_client_id = str(rj.data.client_id);
+			if (result.secret_client_id == '' && type(result.user) == 'object') {
+				result.secret_client_id = str(result.user.username);
+			}
+		} else {
+			result.rotate_error = (type(rj) == 'object' && str(rj.message) != '')
+				? str(rj.message)
+				: '重置 Client Secret 失败';
+		}
+	}
+
+	return result;
+}
+
+let res = null;
+try {
+	res = doImport();
+} catch (e) {
+	res = { ok: false, error: '导入失败：' + errMsg(e) };
+}
+cleanup();
+emit(res);
+exit(res.ok == true ? 0 : 1);

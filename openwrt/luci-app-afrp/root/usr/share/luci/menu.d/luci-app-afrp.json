@@ -1,0 +1,45 @@
+{
+	"admin/services/afrp": {
+		"title": "AFRP 内网穿透",
+		"order": 61,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-afrp" ]
+		}
+	},
+	"admin/services/afrp/client": {
+		"title": "基础设置",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "afrp/client"
+		},
+		"depends": {
+			"acl": [ "luci-app-afrp" ]
+		}
+	},
+	"admin/services/afrp/proxy": {
+		"title": "隧道管理",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "afrp/proxy"
+		},
+		"depends": {
+			"acl": [ "luci-app-afrp" ]
+		}
+	},
+	"admin/services/afrp/status": {
+		"title": "运行状态",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "afrp/status"
+		},
+		"depends": {
+			"acl": [ "luci-app-afrp" ]
+		}
+	}
+}

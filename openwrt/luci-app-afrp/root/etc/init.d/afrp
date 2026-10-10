@@ -1,0 +1,72 @@
+#!/bin/sh /etc/rc.common
+
+START=95
+STOP=95
+USE_PROCD=1
+
+RENDER=/usr/libexec/afrp/render
+FRPC=/usr/bin/frpc
+CONF=/var/etc/afrp.toml
+UPDATE_CORE=/usr/libexec/afrp/update-core
+JSON_CONF=/etc/afrp/config.json
+
+# 读取 JSON 配置中的布尔值
+json_get_bool() {
+	local key="$1"
+	local default="$2"
+	local val
+	val=$(ucode -e "import { readfile } from 'fs'; let c = json(readfile('$JSON_CONF') || '{}'); print(c.$key == true ? '1' : '0');")
+	echo "${val:-$default}"
+}
+
+start_service() {
+	local enabled
+	enabled=$(json_get_bool enabled 0)
+	[ "$enabled" = "1" ] || return 0
+
+	if [ ! -x "$FRPC" ]; then
+		logger -t afrp "frpc 未安装，尝试自动安装"
+		local arch=""
+		if [ -r /etc/openwrt_release ]; then
+			arch=$(grep "DISTRIB_ARCH" /etc/openwrt_release | sed "s/.*'\([^']*\)'.*/\1/")
+		fi
+		[ -z "$arch" ] && arch=$(uname -m)
+		"$UPDATE_CORE" check 'https://www.afrp.net' "$arch" >/tmp/afrp-check.json 2>/dev/null
+		local url sha file
+		url=$(grep -o '"url":"[^"]*"' /tmp/afrp-check.json 2>/dev/null | head -1 | sed 's/"url":"//;s/"$//')
+		sha=$(grep -o '"sha256":"[^"]*"' /tmp/afrp-check.json 2>/dev/null | head -1 | sed 's/"sha256":"//;s/"$//')
+		file=$(grep -o '"file":"[^"]*"' /tmp/afrp-check.json 2>/dev/null | head -1 | sed 's/"file":"//;s/"$//')
+		rm -f /tmp/afrp-check.json
+		if [ -n "$url" ] && [ -n "$sha" ]; then
+			"$UPDATE_CORE" install "$url" "$sha" "$file" >/dev/null 2>&1
+		fi
+		if [ ! -x "$FRPC" ]; then
+			logger -t afrp "frpc 自动安装失败，请打开 LuCI 页面查看"
+			return 1
+		fi
+	fi
+
+	umask 077
+	local render_err
+	render_err=$("$RENDER" 2>&1)
+	if [ $? -ne 0 ]; then
+		logger -t afrp "生成 $CONF 失败：${render_err:-未知错误}，服务未启动"
+		return 1
+	fi
+
+	procd_open_instance
+	procd_set_param command "$FRPC" -c "$CONF"
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+reload_service() {
+	stop
+	start
+}
+
+service_triggers() {
+	procd_add_reload_trigger "$JSON_CONF"
+}

@@ -1,0 +1,6 @@
+Decompressed size: 10240
+First 8 hex: 2e2f64656269616e
+Is ar: NO
+tar[0]: name=[./debian-binary] size=4 type=0
+tar[1]: name=[./data.tar.gz] size=95 type=0
+tar[2]: name=[./control.tar.gz] size=545 type=0

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Dart 侧 getTemporaryDirectory() 指向 cacheDir，更新包下载在 cache/afrp_updates/ -->
+    <cache-path name="afrp_updates" path="afrp_updates" />
+</paths>

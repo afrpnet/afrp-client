@@ -1,0 +1,14 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=AFRP OIDC Client
+Name[zh_CN]=AFRP OIDC 客户端
+Comment=FRP OIDC 认证客户端
+Comment[en]=FRP OIDC Authentication Client
+Comment[zh_CN]=FRP OIDC 认证客户端
+Exec=afrp_oidc
+Icon=afrp-oidc
+Terminal=false
+Categories=Network;Utility;
+Keywords=frp;oidc;tunnel;proxy;
+StartupNotify=true

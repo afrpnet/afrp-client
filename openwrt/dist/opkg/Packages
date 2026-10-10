@@ -1,0 +1,15 @@
+Package: luci-app-afrp
+Version: 1.1.0-1
+Depends: luci-base, uclient-fetch
+Recommends: ca-bundle
+SourceName: luci-app-afrp
+License: MIT
+Section: luci
+Architecture: all
+Installed-Size: 55
+Filename: luci-app-afrp_1.1.0-1_all.ipk
+Size: 16748
+SHA256: 1a93d640fe05dbb3b2a228e16edddff21303ce73a8ab7c852f86dbed5045ca52
+Description: AFRP NAT traversal support and management by afrp.net.
+ Manage frpc tunnels with OIDC authentication, auto-update
+ frpc core, and monitor connection status from LuCI.

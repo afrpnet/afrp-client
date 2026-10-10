@@ -1,0 +1,24 @@
+{
+	"luci-app-afrp": {
+		"description": "AFRP frpc 客户端配置、隧道管理与核心更新",
+		"read": {
+			"file": {
+				"/etc/init.d/afrp": [ "exec" ],
+				"/etc/afrp/config.json": [ "read" ],
+				"/usr/libexec/afrp/update-core": [ "exec" ],
+				"/usr/libexec/afrp/import-account": [ "exec" ],
+				"/sbin/logread": [ "exec" ]
+			},
+			"ubus": {
+				"log": [ "read" ]
+			}
+		},
+		"write": {
+			"file": {
+				"/etc/afrp/config.json": [ "write" ],
+				"/tmp/afrp-import.json": [ "write" ],
+				"/tmp/afrp-login.json": [ "write" ]
+			}
+		}
+	}
+}
