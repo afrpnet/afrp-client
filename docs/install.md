@@ -24,6 +24,8 @@
 
 ## Linux
 
+> **注意**：Linux 版是图形桌面应用，需要有图形桌面环境（GNOME / KDE / XFCE 等）。无桌面的服务器无法直接运行，见下方说明。
+
 下载 `afrp-oidc-client_<版本>_linux_<架构>.tar.gz`，解压后运行。
 
 ```bash
@@ -40,6 +42,13 @@ sudo apt install libgtk-3-0 libsecret-1-0 libjson-glib-1.0-0 libayatana-appindic
 - amd64 适用于 x86_64 系统，arm64 适用于 ARM 系统（树莓派等）
 - 兼容 Debian 12+、Ubuntu 20.04+、CentOS 9 等（GLIBC 2.35+）
 - 数据保存在 `~/.local/share/net.afrp/AFRP OIDC Client/`
+
+**无桌面服务器如何使用：**
+
+Linux 客户端是 GUI 应用，不能直接在 SSH 终端中运行。服务器场景推荐以下方案：
+
+1. **X11 转发**：从有桌面的电脑 SSH 到服务器（`ssh -X`），然后运行 `./afrp_oidc`，界面会显示在本地桌面
+2. **直接用 frpc 命令行**：服务器通常已有 frpc，手动编写 `frpc.toml` 配置文件运行即可，不需要 GUI 客户端。OIDC 密钥从网页端获取后填入配置
 
 ## Android 7.0+
 
