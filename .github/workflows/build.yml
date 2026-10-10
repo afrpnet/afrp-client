@@ -235,6 +235,7 @@ jobs:
           mkdir -p ../dist ../opkg
           cp dist/*.ipk ../dist/
           cp dist/*.tar.gz ../dist/
+          rm -f ../opkg/*.ipk ../opkg/Packages ../opkg/Packages.gz
           cp dist/*.ipk ../opkg/
           cp dist/Packages ../opkg/
           cp dist/Packages.gz ../opkg/
