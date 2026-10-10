@@ -221,6 +221,16 @@ List<int> _versionParts(String v) {
       .toList();
 }
 
+/// 架构别名归一化：清单中可能用 x64/amd64、arm64/aarch64 等不同命名
+String _normalizeArch(String arch) {
+  final a = arch.toLowerCase();
+  if (a == 'x64' || a == 'x86_64') return 'amd64';
+  if (a == 'aarch64') return 'arm64';
+  if (a == 'armv7' || a == 'armhf') return 'arm';
+  if (a == 'i386' || a == 'i686' || a == 'x86') return '386';
+  return a;
+}
+
 /// 从清单挑选最新条目：按 kind+platform 过滤，可选 channel / arch 优先
 UpdateEntry? chooseEntry(
   UpdateManifest manifest, {
@@ -236,18 +246,20 @@ UpdateEntry? chooseEntry(
     return null;
   }
 
+  final wantArch = arch == null ? null : _normalizeArch(arch);
+
   UpdateEntry? pick(Iterable<UpdateEntry> src) {
     UpdateEntry? best;
     for (final e in src) {
-      if (arch != null && e.arch.isNotEmpty && e.arch != arch) {
+      if (wantArch != null && e.arch.isNotEmpty && _normalizeArch(e.arch) != wantArch) {
         continue;
       }
       if (best == null) {
         best = e;
         continue;
       }
-      final eExact = arch != null && e.arch == arch;
-      final bExact = arch != null && best.arch == arch;
+      final eExact = wantArch != null && _normalizeArch(e.arch) == wantArch;
+      final bExact = wantArch != null && _normalizeArch(best.arch) == wantArch;
       if (eExact != bExact) {
         if (eExact) {
           best = e;
