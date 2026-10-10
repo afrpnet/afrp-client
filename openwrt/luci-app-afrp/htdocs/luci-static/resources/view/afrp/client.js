@@ -40,6 +40,8 @@ return view.extend({
 	},
 	handleSaveApply: function() {
 		return this.handleSave().then(function() {
+			return fs.exec('/etc/init.d/afrp', ['restart']);
+		}).then(function() {
 			ui.addNotification(null, E('p', {}, _('配置已保存并应用')));
 			window.location.reload();
 		});
