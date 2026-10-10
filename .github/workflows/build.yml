@@ -66,7 +66,7 @@ jobs:
         shell: bash
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" /DMyAppVersion="$VER" installer/setup.iss
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" /DMyAppVersion=$VER installer/setup.iss
       - name: Collect installer
         shell: bash
         run: |
