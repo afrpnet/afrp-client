@@ -2,9 +2,7 @@
 ; Build with: build.bat (stages files first, then calls ISCC on this script)
 
 #define MyAppname "AFRP OIDC Client"
-#ifndef MyAppVersion
-#define MyAppVersion "1.1.2"
-#endif
+#define MyAppVersion "1.1.3"
 #define MyAppPublisher "afrp.net"
 #define MyAppURL "https://www.afrp.net"
 #define MyAppExename "afrp_oidc.exe"
@@ -38,7 +36,7 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 SetupLogging=yes
 InfoBeforeFile=install-notes.txt
-VersionInfoVersion={#MyAppVersion}.0
+VersionInfoVersion=1.1.3.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductname={#MyAppname}
 VersionInfoDescription=AFRP OIDC Client Setup

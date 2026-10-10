@@ -13,7 +13,7 @@ import '../frpc/frpc_manager.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.1.0';
+const String kAppVersion = '1.1.3';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -118,6 +118,142 @@ String _trimBase(String baseUrl) => baseUrl.replaceAll(RegExp(r'/+$'), '');
 String manifestUrl(String baseUrl) => '${_trimBase(baseUrl)}/download/manifest.json';
 
 String downloadPageUrl(String baseUrl) => '${_trimBase(baseUrl)}/download/';
+
+// ---------------------------------------------------------------------------
+// GitHub Release 更新源（官方 + 代理，按序回退）
+// ---------------------------------------------------------------------------
+
+/// GitHub Release 下载源：先试官方，不通再用代理
+const List<String> kGitHubSources = [
+  'https://github.com/',
+  'https://ghfast.top/https://github.com/',
+  'https://gh-proxy.com/https://github.com/',
+  'https://ghproxy.net/https://github.com/',
+];
+
+/// GitHub Release 信息（从 Atom feed 解析）
+class GitHubReleaseInfo {
+  final String tag;
+  final String version;
+  final List<String> assetNames;
+  final String source;
+
+  const GitHubReleaseInfo({
+    required this.tag,
+    required this.version,
+    required this.assetNames,
+    required this.source,
+  });
+}
+
+/// 从 GitHub Atom feed 获取最新 release 信息；依次尝试各源
+Future<GitHubReleaseInfo> fetchGitHubRelease(
+  String repo, {
+  http.Client? client,
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final c = client ?? http.Client();
+  String lastErr = '';
+  for (final base in kGitHubSources) {
+    final atomUrl = '${_trimBase(base)}$repo/releases.atom';
+    try {
+      final res = await c.get(Uri.parse(atomUrl)).timeout(timeout);
+      if (res.statusCode != 200) {
+        lastErr = '$base → HTTP ${res.statusCode}';
+        continue;
+      }
+      final body = utf8.decode(res.bodyBytes);
+      final tagMatch = RegExp(
+        r'<entry>.*?<title[^>]*>(v[0-9][0-9.]*)</title>.*?</entry>',
+        dotAll: true,
+      ).firstMatch(body);
+      if (tagMatch == null) {
+        lastErr = '$base → 未匹配到 release entry';
+        continue;
+      }
+      final tag = tagMatch.group(1)!;
+      final version = tag.replaceFirst(RegExp('^[vV]'), '');
+      // 提取资产文件名
+      final assetNames = <String>[];
+      final assetRegex = RegExp(
+        r'<link[^>]+href="[^"]*/releases/download/[^"]+/([^"]+)"[^>]*type="application/',
+      );
+      for (final m in assetRegex.allMatches(body)) {
+        final name = Uri.decodeComponent(m.group(1)!);
+        if (!assetNames.contains(name)) {
+          assetNames.add(name);
+        }
+      }
+      if (client == null) c.close();
+      return GitHubReleaseInfo(
+        tag: tag,
+        version: version,
+        assetNames: assetNames,
+        source: base,
+      );
+    } on TimeoutException {
+      lastErr = '$base → 超时';
+    } catch (e) {
+      lastErr = '$base → $e';
+    }
+  }
+  if (client == null) c.close();
+  throw UpdateException('无法从 GitHub 获取 release 信息：$lastErr');
+}
+
+/// 在 GitHub release 资产列表中匹配当前平台/架构的条目
+/// 返回 [assetName, downloadUrl] 或 null
+List<String>? matchGitHubAsset(
+  GitHubReleaseInfo release, {
+  required String kind,
+  required String platform,
+  required String arch,
+  String? channel,
+  String repo = 'afrpnet/afrp-client',
+}) {
+  // 平台名映射：app 用 macos，GitHub 用 darwin
+  String ghOs(String p) {
+    if (p == 'macos') return 'darwin';
+    return p;
+  }
+
+  // 资产名模式
+  String assetPattern(String p, String a, String ch, String ext) {
+    if (kind == 'frpc') {
+      // frpc: frp_{ver}_{os}_{arch}.{ext}
+      return 'frp_${release.version}_${ghOs(p)}_$a.$ext';
+    }
+    // app: afrp-oidc-client_{ver}_{platform}_{arch}_{channel?}.{ext}
+    if (ch.isNotEmpty) {
+      return 'afrp-oidc-client_${release.version}_${p}_$a\_$ch.$ext';
+    }
+    return 'afrp-oidc-client_${release.version}_${p}_$a.$ext';
+  }
+
+  // 可能的扩展名
+  final exts = <String>['exe', 'zip', 'tar.gz', 'apk', 'hap', 'ipk'];
+
+  for (final ext in exts) {
+    final name = assetPattern(platform, arch, channel ?? '', ext);
+    if (release.assetNames.contains(name)) {
+      // 构造下载 URL（用第一个源，下载时会回退）
+      final url = '${_trimBase(kGitHubSources[0])}$repo/releases/download/${release.tag}/$name';
+      return [name, url];
+    }
+  }
+  return null;
+}
+
+/// 构造 GitHub 下载 URL（指定源）
+String githubDownloadUrl(
+  GitHubReleaseInfo release,
+  String assetName, {
+  String repo = 'afrpnet/afrp-client',
+  int sourceIndex = 0,
+}) {
+  final base = kGitHubSources[sourceIndex % kGitHubSources.length];
+  return '${_trimBase(base)}$repo/releases/download/${release.tag}/$assetName';
+}
 
 /// 拉取并解析更新清单；网络/格式错误统一抛 [UpdateException]
 Future<UpdateManifest> fetchUpdateManifest(
@@ -281,6 +417,7 @@ UpdateEntry? chooseEntry(
 // ---------------------------------------------------------------------------
 
 /// 下载条目到临时目录并校验 SHA-256（清单未提供 sha256 时跳过校验）
+/// 支持多源回退：GitHub URL 会依次尝试官方和代理
 Future<File> downloadUpdateFile(
   UpdateEntry entry, {
   void Function(int received, int total)? onProgress,
@@ -289,6 +426,28 @@ Future<File> downloadUpdateFile(
   if (entry.url.isEmpty) {
     throw UpdateException('该条目没有下载地址');
   }
+
+  // 判断是否为 GitHub URL，如果是则生成多源列表
+  final urls = <String>[];
+  if (entry.url.contains('github.com/')) {
+    // 从 URL 提取 repo/tag/name
+    final ghMatch = RegExp(
+      r'github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/(.+)',
+    ).firstMatch(entry.url);
+    if (ghMatch != null) {
+      final repo = ghMatch.group(1)!;
+      final tag = ghMatch.group(2)!;
+      final name = ghMatch.group(3)!;
+      for (final base in kGitHubSources) {
+        urls.add('${_trimBase(base)}$repo/releases/download/$tag/$name');
+      }
+    } else {
+      urls.add(entry.url);
+    }
+  } else {
+    urls.add(entry.url);
+  }
+
   final tmpDir = await getTemporaryDirectory();
   final dir = Directory('${tmpDir.path}${Platform.pathSeparator}afrp_updates');
   if (!dir.existsSync()) {
@@ -299,49 +458,57 @@ Future<File> downloadUpdateFile(
   final c = client ?? http.Client();
   IOSink? sink;
   var success = false;
-  try {
-    final res = await c.send(http.Request('GET', Uri.parse(entry.url)));
-    if (res.statusCode != 200) {
-      throw UpdateException('下载失败：HTTP ${res.statusCode}');
-    }
-    var total = res.contentLength ?? 0;
-    if (total <= 0) {
-      total = entry.size;
-    }
-    final sha = Sha256();
-    sink = out.openWrite();
-    var received = 0;
-    await for (final chunk in res.stream) {
-      sink.add(chunk);
-      sha.update(chunk);
-      received += chunk.length;
-      onProgress?.call(received, total);
-    }
-    await sink.flush();
-    await sink.close();
-    sink = null;
-    if (entry.sha256.isNotEmpty && sha.hexDigest() != entry.sha256.toLowerCase()) {
-      throw UpdateException('文件校验失败（SHA-256 不一致）');
-    }
-    success = true;
-    return out;
-  } on UpdateException {
-    rethrow;
-  } catch (e) {
-    throw UpdateException('下载失败：$e');
-  } finally {
+  String lastErr = '';
+
+  for (final url in urls) {
     try {
-      await sink?.close();
-    } catch (_) {}
-    if (!success && out.existsSync()) {
+      final res = await c.send(http.Request('GET', Uri.parse(url)));
+      if (res.statusCode != 200) {
+        lastErr = 'HTTP ${res.statusCode}';
+        continue;
+      }
+      var total = res.contentLength ?? 0;
+      if (total <= 0) {
+        total = entry.size;
+      }
+      final sha = Sha256();
+      sink = out.openWrite();
+      var received = 0;
+      await for (final chunk in res.stream) {
+        sink.add(chunk);
+        sha.update(chunk);
+        received += chunk.length;
+        onProgress?.call(received, total);
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      if (entry.sha256.isNotEmpty && sha.hexDigest() != entry.sha256.toLowerCase()) {
+        lastErr = 'SHA-256 不一致';
+        if (out.existsSync()) out.deleteSync();
+        continue;
+      }
+      success = true;
+      if (client == null) c.close();
+      return out;
+    } on UpdateException {
+      rethrow;
+    } catch (e) {
+      lastErr = '$e';
       try {
-        out.deleteSync();
+        await sink?.close();
       } catch (_) {}
-    }
-    if (client == null) {
-      c.close();
+      sink = null;
+      if (out.existsSync()) {
+        try {
+          out.deleteSync();
+        } catch (_) {}
+      }
     }
   }
+
+  if (client == null) c.close();
+  throw UpdateException('下载失败（已尝试 ${urls.length} 个源）：$lastErr');
 }
 
 /// 若为 .tar.gz/.tgz/.zip 则解出 [preferredName] 文件，否则原样返回
@@ -393,19 +560,70 @@ class FrpcUpdateCheck {
   bool get hasUpdate => compareVersions(entry.version, currentVersion) > 0;
 }
 
-/// 查询 frpc 更新；清单中无适用条目时返回 null（Android 不内置 frpc）
+/// 查询 frpc 更新；优先从 GitHub Release 获取，失败回退到网站清单
 Future<FrpcUpdateCheck?> checkFrpcUpdate(String baseUrl, {http.Client? client}) async {
   final platform = currentUpdatePlatform();
   if (platform == 'android') {
     return null;
   }
+  final arch = currentUpdateArch();
+
+  // 先试 GitHub
+  try {
+    final release = await fetchGitHubRelease('fatedier/frp', client: client);
+    final match = _matchFrpcAsset(release, platform, arch);
+    if (match != null) {
+      final [assetName, url] = match;
+      final entry = UpdateEntry(
+        id: 'gh-frpc-$platform-$arch',
+        kind: 'frpc',
+        platform: platform,
+        channel: '',
+        arch: arch,
+        version: release.version,
+        file: assetName,
+        url: url,
+        sha256: '', // GitHub Atom 无 SHA-256，跳过校验
+        date: '',
+        notes: 'frpc 官方 ${release.version}（$platform/$arch）',
+        size: 0,
+        latest: true,
+      );
+      final current = await frpcManager.refreshInstalledVersion();
+      return FrpcUpdateCheck(entry, current);
+    }
+  } catch (_) {
+    // GitHub 失败，回退到网站
+  }
+
+  // 回退：网站 manifest
   final manifest = await fetchUpdateManifest(baseUrl, client: client);
-  final entry = chooseEntry(manifest, kind: 'frpc', platform: platform, arch: currentUpdateArch());
+  final entry = chooseEntry(manifest, kind: 'frpc', platform: platform, arch: arch);
   if (entry == null) {
     return null;
   }
   final current = await frpcManager.refreshInstalledVersion();
   return FrpcUpdateCheck(entry, current);
+}
+
+/// 匹配 frpc GitHub 资产
+List<String>? _matchFrpcAsset(GitHubReleaseInfo release, String platform, String arch) {
+  String ghOs(String p) => p == 'macos' ? 'darwin' : p;
+  final os = ghOs(platform);
+
+  // frpc 官方命名：frp_{ver}_{os}_{arch}.tar.gz 或 .zip
+  final candidates = <String>[
+    'frp_${release.version}_${os}_$arch.tar.gz',
+    'frp_${release.version}_${os}_$arch.zip',
+  ];
+
+  for (final name in candidates) {
+    if (release.assetNames.contains(name)) {
+      final url = githubDownloadUrl(release, name, repo: 'fatedier/frp');
+      return [name, url];
+    }
+  }
+  return null;
 }
 
 /// 下载并替换 frpc 二进制（会先断开当前隧道连接）
@@ -452,10 +670,10 @@ Future<bool> isWindowsInstalled() async {
   return false;
 }
 
-/// 查询 App 更新；清单中无适用条目时返回 null
+/// 查询 App 更新；优先从 GitHub Release 获取，失败回退到网站清单
 Future<AppUpdateCheck?> checkAppUpdate(String baseUrl, {http.Client? client}) async {
   final platform = currentUpdatePlatform();
-  final manifest = await fetchUpdateManifest(baseUrl, client: client);
+  final arch = currentUpdateArch();
   String? channel;
   switch (platform) {
     case 'windows':
@@ -465,11 +683,65 @@ Future<AppUpdateCheck?> checkAppUpdate(String baseUrl, {http.Client? client}) as
     case 'ohos':
       channel = 'hap';
   }
-  final entry = chooseEntry(manifest, kind: 'app', platform: platform, channel: channel, arch: currentUpdateArch());
+
+  // 先试 GitHub
+  try {
+    final release = await fetchGitHubRelease('afrpnet/afrp-client', client: client);
+    final match = _matchAppAsset(release, platform, arch, channel);
+    if (match != null) {
+      final [assetName, url] = match;
+      final entry = UpdateEntry(
+        id: 'gh-app-$platform-${channel ?? ''}-$arch',
+        kind: 'app',
+        platform: platform,
+        channel: channel ?? '',
+        arch: arch,
+        version: release.version,
+        file: assetName,
+        url: url,
+        sha256: '', // GitHub Atom 无 SHA-256，跳过校验
+        date: '',
+        notes: '',
+        size: 0,
+        latest: true,
+      );
+      return AppUpdateCheck(entry, kAppVersion);
+    }
+  } catch (_) {
+    // GitHub 失败，回退到网站
+  }
+
+  // 回退：网站 manifest
+  final manifest = await fetchUpdateManifest(baseUrl, client: client);
+  final entry = chooseEntry(manifest, kind: 'app', platform: platform, channel: channel, arch: arch);
   if (entry == null) {
     return null;
   }
   return AppUpdateCheck(entry, kAppVersion);
+}
+
+/// 匹配 App GitHub 资产
+List<String>? _matchAppAsset(
+  GitHubReleaseInfo release,
+  String platform,
+  String arch,
+  String? channel,
+) {
+  // 资产名模式：afrp-oidc-client_{ver}_{platform}_{arch}[_{channel}].{ext}
+  final exts = <String>['exe', 'zip', 'tar.gz', 'apk', 'hap'];
+  final channels = channel != null ? [channel, ''] : [''];
+
+  for (final ch in channels) {
+    for (final ext in exts) {
+      final suffix = ch.isNotEmpty ? '_$ch.$ext' : '.$ext';
+      final name = 'afrp-oidc-client_${release.version}_${platform}_$arch$suffix';
+      if (release.assetNames.contains(name)) {
+        final url = githubDownloadUrl(release, name);
+        return [name, url];
+      }
+    }
+  }
+  return null;
 }
 
 /// 执行 App 更新。

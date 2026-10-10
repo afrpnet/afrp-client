@@ -29,6 +29,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        shell: bash
+        run: bash .github/sync-version-ci.sh
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -87,6 +92,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        run: bash .github/sync-version-ci.sh
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -115,6 +124,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        run: bash .github/sync-version-ci.sh
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -152,6 +165,10 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        run: bash .github/sync-version-ci.sh
+
       - name: Install Flutter manually
         run: |
           git clone https://github.com/flutter/flutter.git -b stable ~/flutter
@@ -196,6 +213,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        run: bash .github/sync-version-ci.sh
+
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
