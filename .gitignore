@@ -49,6 +49,7 @@ app.*.map.json
 
 # Build output
 /dist/
+/openwrt/dist/
 
 # Flutter log files
 flutter_*.log
