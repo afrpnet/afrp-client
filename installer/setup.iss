@@ -2,7 +2,9 @@
 ; Build with: build.bat (stages files first, then calls ISCC on this script)
 
 #define MyAppname "AFRP OIDC Client"
+#ifndef MyAppVersion
 #define MyAppVersion "1.1.2"
+#endif
 #define MyAppPublisher "afrp.net"
 #define MyAppURL "https://www.afrp.net"
 #define MyAppExename "afrp_oidc.exe"

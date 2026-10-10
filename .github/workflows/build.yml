@@ -66,9 +66,7 @@ jobs:
         shell: bash
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          sed -i "s/#define MyAppVersion \"[^\"]*\"/#define MyAppVersion \"$VER\"/" installer/setup.iss
-          sed -i "s/VersionInfoVersion=[0-9.]*/VersionInfoVersion=$VER.0/" installer/setup.iss
-          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" installer/setup.iss
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" /DMyAppVersion="$VER" installer/setup.iss
       - name: Collect installer
         shell: bash
         run: |
@@ -107,34 +105,6 @@ jobs:
           mkdir -p dist
           cd build/macos/Build/Products/Release
           ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_arm64.zip"
-          cd ../../../../
-          gh release upload "v$VER" dist/* --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-macos-x64:
-    needs: create-release
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - name: Download frpc (macOS x64)
-        run: |
-          FRPC_VERSION="0.71.0"
-          mkdir -p assets/frpc/macos
-          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_amd64.tar.gz" -o frpc_amd64.tar.gz
-          mkdir -p /tmp/frpc_amd64 && tar -xzf frpc_amd64.tar.gz -C /tmp/frpc_amd64
-          tar -czf assets/frpc/macos/frpc_darwin_amd64.tar.gz -C /tmp/frpc_amd64/frp_${FRPC_VERSION}_darwin_amd64 frpc
-      - name: Build macOS
-        run: flutter build macos --release
-      - name: Package & Upload
-        run: |
-          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          mkdir -p dist
-          cd build/macos/Build/Products/Release
-          ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_amd64.zip"
           cd ../../../../
           gh release upload "v$VER" dist/* --clobber
         env:
