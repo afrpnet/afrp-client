@@ -1,94 +1,95 @@
-# frp-oidc-app
+# AFRP OIDC Client
 
-FRP + OIDC 多端客户端（Windows / Android / HarmonyOS / iOS 计划中），与 frp-oidc-php 共用数据库，通过 Bearer-token API 认证。
+基于 [frp](https://github.com/fatedier/frp) 的多端内网穿透客户端，内置 OIDC 认证，支持 Windows / macOS / Linux / Android / HarmonyOS / OpenWrt。
 
-> 用户与安装文档见 [docs/](docs/README.md)：[用户手册](docs/user-guide.md)、
-> [各平台安装说明](docs/install.md)、[常见问题 FAQ](docs/faq.md)。
+## 功能
 
-## 工具链（均安装在 D 盘）
+- 登录账号、查看会员状态、购买套餐
+- 选择服务器、配置隧道（TCP / UDP / HTTP / HTTPS / STCP / SUDP / XTCP）
+- 一键连接，内置 frpc 核心自动释放
+- OIDC 密钥管理（粘贴已有 / 一键生成 / 清除）
+- 站内消息提醒
+- 多平台统一界面
 
-| 组件 | 路径 |
+## 安装
+
+### Windows
+
+**安装版（推荐）**：下载 `afrp-oidc-client_<版本>_windows_amd64_setup.exe`，双击安装。安装时可选自动添加 Windows Defender 排除项，避免内置 frpc 被误拦。
+
+**免安装版**：下载 `afrp-oidc-client_<版本>_windows_amd64_portable.zip`，解压到任意目录，双击 `afrp_oidc.exe` 启动。
+
+> 首次运行如弹出 SmartScreen 提示，点「更多信息」→「仍要运行」。
+
+### macOS
+
+下载 `afrp-oidc-client_<版本>_macos_<架构>.zip`，解压后双击 `.app`。首次运行需在「系统设置 → 隐私与安全性」中允许。
+
+- Apple Silicon 选 `arm64`，Intel 选 `amd64`
+
+### Linux
+
+下载 `afrp-oidc-client_<版本>_linux_<架构>.tar.gz`，解压后运行 `afrp_oidc`。
+
+需要 GTK3 环境：
+```bash
+# Debian/Ubuntu
+sudo apt install libgtk-3-0 libsecret-1-0 libjson-glib-1.0-0 libayatana-appindicator3-1
+```
+
+### Android
+
+下载 `afrp-oidc-client_<版本>_android_all.apk`，传到手机安装。系统会提示允许「安装未知应用」。
+
+> 当前版本内置 frpc 连接功能已可用。
+
+### HarmonyOS / OpenHarmony
+
+下载 `afrp-oidc-client_<版本>_ohos_arm64.hap`，通过 `hdc install` 安装。
+
+> 使用 OpenHarmony 测试签名，仅支持 OpenHarmony 设备/模拟器。HarmonyOS NEXT 真机需要华为云签名。
+
+### OpenWrt
+
+**IPK 安装**：
+```bash
+opkg install luci-app-afrp_<版本>_all.ipk
+```
+
+**手动安装**：下载 `luci-app-afrp-<版本>.tar.gz`，解压到 `/usr/lib/lua/luci/`。
+
+安装后在 LuCI 界面「服务 → AFRP」中配置。
+
+## 快速开始
+
+1. **登录**：输入账号密码，默认连接 `https://www.afrp.net`
+2. **设置 OIDC 密钥**：在「连接」页选择「粘贴已有密钥」或「一键生成新密钥」
+3. **添加隧道**：选择服务器，点「添加隧道」，填写本地 IP、端口、远程端口
+4. **连接**：点「连接服务器」，状态变绿即成功
+
+## 文档
+
+- [用户手册](docs/user-guide.md) — 详细功能说明
+- [安装说明](docs/install.md) — 各平台安装细节
+- [常见问题](docs/faq.md) — FAQ
+
+## 更新
+
+- **Windows 安装版**：运行新版本安装程序自动升级
+- **Windows 免安装版**：关闭程序，用新版本覆盖旧目录
+- **其他平台**：App 内检查更新或到 [Releases](https://github.com/afrpnet/afrp-client/releases) 下载
+
+## 数据位置
+
+| 平台 | 路径 |
 | --- | --- |
-| Flutter (OpenHarmony 分支) | `D:\dev\flutter-ohos` |
-| Node.js 18 | `D:\dev\node18` |
-| JDK 17 | `D:\dev\jdk-17.0.2` |
-| OHOS 命令行工具 (ohpm) | `D:\dev\harmony-tools\oh-command-line-tools\ohpm` |
-| OpenHarmony SDK 26 (7.0-Beta1) | `D:\dev\harmony-sdk\26` |
-| Android SDK / 模拟器 | `D:\dev\android-sdk`、AVD `frp_pixel` |
+| Windows | `%APPDATA%\net.afrp\AFRP OIDC Client\` |
+| macOS | `~/Library/Application Support/net.afrp/AFRP OIDC Client/` |
+| Linux | `~/.local/share/net.afrp/AFRP OIDC Client/` |
+| Android | `/data/data/net.afrp.frp_oidc_app/` |
 
-## 构建命令
+隧道配置和登录状态保存在本机，换设备需重新登录。
 
-### Windows 桌面端
-```
-flutter build windows
-```
+## 许可证
 
-### 鸿蒙 HAP
-```
-cd ohos
-export JAVA_HOME="D:\\dev\\jdk-17.0.2"
-export PATH="/d/dev/node18:/d/dev/jdk-17.0.2/bin:/d/dev/harmony-tools/oh-command-line-tools/ohpm/bin:$PATH"
-flutter build hap --debug      # 或 cd ohos && ./hvigorw.bat assembleHap -p product=default -p buildMode=debug
-```
-
-产物：`build\ohos\hap\entry-default-signed.hap`
-
-## HarmonyOS 构建 FAQ（防重复踩坑）
-
-### 1. 签名密码必须是加密密文（hvigor ≥ 5.19.8）
-`build-profile.json5` 里 `storePassword` / `keyPassword` 不能是明文。hvigor 的 DecipherUtil 要求它们是 hex 编码的 AES-GCM 密文（布局 `BE32(ct+16) || iv(12) || ct || tag(16)`），解密密钥来自 **`<storeFile 所在目录>/material/{fd/0,fd/1,fd/2,ac,ce}`**（DevEco Studio 自动生成，纯 CLI 环境没有）。
-
-本仓库提供 `ohos/gen-signing-material.js` 自动生成：
-```
-node gen-signing-material.js           # 确保 material 存在 + 改写 build-profile.json5 密码
-node gen-signing-material.js --force   # 重新生成 material
-node gen-signing-material.js --verify  # 自检（用插件自带样本解密出 "DebugKey"）
-```
-密钥推导（逆向自插件 `src/utils/decipher-util.js`）：
-`root = pbkdf2_sha256(utf8(xor(fd0,fd1,fd2,COMPONENT)), salt, 10000, 16)`，`key = AES-128-GCM.decrypt(root, ce)`。
-明文密码为 `LocalTestSignPassword_1234567890ab`（hap-sign-tool 手工签名时用这个）。
-
-### 2. 应用证书叶子必须由 CA 签发
-`signature/OpenHarmonyApplication.pem` 必须是 ≥2 张的证书链，且 **leaf 不能是自签证书**（自签报 `11013002 verify certificate chain failed`，单张报 `11013004 Profile cert must a cert chain`）。
-SDK 自带的 `OpenHarmony.p12` 里 `openharmony application release` 是自签证书，但同库内有 **`openharmony application ca` 的 CA 私钥**，可用 `hap-sign-tool generate-cert` 重签：
-```
-java -jar <sdk>/26/toolchains/lib/hap-sign-tool.jar generate-cert \
-  -keyAlias "openharmony application release" -keyPwd LocalTestSignPassword_1234567890ab \
-  -issuer "C=CN,O=OpenHarmony,OU=OpenHarmony Team,CN=OpenHarmony Application CA" \
-  -issuerKeyAlias "openharmony application ca" -issuerKeyPwd LocalTestSignPassword_1234567890ab \
-  -subject "C=CN,O=OpenHarmony,OU=OpenHarmony Team,CN=OpenHarmony Application Release" \
-  -validity 1095 -keyUsage digitalSignature -extKeyUsage codeSignature -signAlg SHA256withECDSA \
-  -keystoreFile signature/OpenHarmony.p12 -keystorePwd LocalTestSignPassword_1234567890ab \
-  -outFile new_leaf.pem
-```
-`gen-signing-material.js` 已内置该步骤（检测到自签自动重签，旧文件备份为 `.selfsigned.bak`）。
-
-### 3. p12 密码长度限制
-签名库密码必须 **≥32 字符**，否则 hvigor 报 `00303116`。本工程统一用 `LocalTestSignPassword_1234567890ab`（PKCS12 格式下 key 密码跟随 store 密码，无法单独改）。
-
-### 4. 签名验证
-```
-java -jar <sdk>/26/toolchains/lib/hap-sign-tool.jar verify-app \
-  -inFile build/ohos/hap/entry-default-signed.hap \
-  -outCertChain out.cer -outProfile out.p7b
-```
-预期结尾输出 `verify: Verify success`，证书链为 `Release(CA 签发) ← Root CA ← Application CA`。
-
-### 5. `ohpm install` 后必须重新打补丁
-`@ohos/flutter_ohos` har 是按华为 HarmonyOS SDK 编译的（`KeyEvent.isCapsLockOn`），OpenHarmony SDK 26 只有 `capsLock` 字段。每次 `ohpm install` 后运行：
-```
-node ohos/patch-flutter-ohos-har.js
-```
-
-### 6. hvigor 缓存目录双哈希
-`flutter build hap` 与直接 `hvigorw` 会算出不同的 project_caches 哈希目录，导致 node_modules 重复安装/找不到。若新哈希目录缺失，运行（管理员）：
-```
-ohos\link-workspace-cache.bat   # 把已安装的 workspace junction 到新哈希目录
-```
-
-### 7. 构建产物体积
-debug HAP 约 170–210MB（含 Flutter debug 引擎符号），release 构建会显著缩小。
-
-### 8. 模拟器/真机安装限制
-- 本工程使用 **OpenHarmony 测试签名**（SDK 自带证书+profile），仅能安装到 **OpenHarmony 设备/模拟器**。
-- **HarmonyOS NEXT 真机** 需要华为开发者账号的云签名（AGC 申请证书 + profile），无法用测试签名安装。
+MIT
