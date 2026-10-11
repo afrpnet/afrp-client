@@ -49,6 +49,14 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
+# HarmonyOS / OpenHarmony
+ohos/oh_modules/
+ohos/node_modules/
+ohos/local.properties
+ohos/.hvigor/
+ohos/**/oh_modules/
+ohos/**/build/
+
 # Build output
 /dist/
 /openwrt/dist/
