@@ -271,24 +271,10 @@ jobs:
 
       - name: Install flutter-ohos toolchain
         run: |
-          git clone --depth 1 https://github.com/AE86fh/flutter-ohos.git -b flutter-3.24.4-ohos-1.0.0 ~/flutter-ohos
+          git clone --depth 1 https://atomgit.com/CPF-Flutter/flutter_flutter.git -b oh-3.44.9-dev ~/flutter-ohos
           export PATH="$HOME/flutter-ohos/bin:$PATH"
           flutter precache
           flutter config --no-analytics
-
-      - name: Install OHOS SDK
-        run: |
-          export OHOS_SDK_HOME="$HOME/ohos-sdk"
-          mkdir -p "$OHOS_SDK_HOME"
-          cd "$OHOS_SDK_HOME"
-          wget -q "https://repo.harmonyos.com/openharmony-sdk/command-line-tools-linux-x64-5.0.3.200.zip" -O ohos-tools.zip || \
-          wget -q "https://contentcenter-drcn.dbankcdn.cn/pvt_1/DevEcoStudio/command-line-tools-linux-x64-5.0.3.200.zip" -O ohos-tools.zip
-          unzip -q ohos-tools.zip
-          rm ohos-tools.zip
-          SDK_BIN=$(find . -name "sdkmanager" -type f | head -1 | xargs dirname)
-          if [ -n "$SDK_BIN" ]; then
-            yes | "$SDK_BIN/sdkmanager" --licenses 2>/dev/null || true
-          fi
 
       - name: Prepare assets for mobile build
         run: |
@@ -298,11 +284,11 @@ jobs:
           done
           sed -i -E 's@^([[:space:]]*-[[:space:]]+assets/frpc/(windows|linux|macos)/.*)$@#\1@' pubspec.yaml
 
-      - name: Build HarmonyOS HAP
+      - name: Generate OHOS platform and build HAP
         run: |
           export PATH="$HOME/flutter-ohos/bin:$PATH"
-          export OHOS_SDK_HOME="$HOME/ohos-sdk"
-          export OHOS_BASE_SDK_HOME="$OHOS_SDK_HOME"
+          rm -rf ohos
+          flutter create --platforms ohos .
           flutter build hap --debug
 
       - name: Upload HAP to Release
