@@ -29,6 +29,10 @@ class FrpcManager extends ChangeNotifier {
   /// 已安装的 frpc 版本（读 .version 标记；从未释放过则为内置版本）
   String get installedVersion => _installedVersion ?? frpcVersion;
 
+  /// 当前平台是否支持内置 frpc（桌面端支持，移动端暂不支持）
+  static bool get frpcSupported =>
+      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+
   /// 按当前平台返回资源 key 与释放后的文件名；macOS 用 tar.gz 分发（规避平台查杀误报）
   static (String asset, String exeName) get _platformAsset {
     if (Platform.isWindows) {
@@ -40,7 +44,7 @@ class FrpcManager extends ChangeNotifier {
     if (Platform.isMacOS) {
       return ('assets/frpc/macos/frpc_darwin_amd64.tar.gz', 'frpc');
     }
-    throw UnsupportedError('当前平台暂不支持内置 frpc（Android 版将在后续版本提供）');
+    throw UnsupportedError('当前平台暂不支持内置 frpc');
   }
 
   Future<Directory> _workDir() async {

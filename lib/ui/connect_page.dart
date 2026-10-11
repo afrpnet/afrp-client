@@ -120,6 +120,7 @@ class _ConnectPageState extends State<ConnectPage> {
               )
             else
               DropdownButtonFormField<int>(
+                isExpanded: true,
                 initialValue: server?.id,
                 decoration: const InputDecoration(
                   labelText: '选择服务器',
@@ -132,6 +133,7 @@ class _ConnectPageState extends State<ConnectPage> {
                       child: Text(
                         '${s.name}  ·  ${s.endpoint}${s.location.isEmpty ? '' : '  ·  ${s.location}'}',
                         overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
                       ),
                     ),
                 ],
@@ -453,7 +455,7 @@ class _ConnectPageState extends State<ConnectPage> {
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       backgroundColor: running ? scheme.error : null,
                     ),
-                    onPressed: server == null ? null : _toggleConnect,
+                    onPressed: server == null || !FrpcManager.frpcSupported ? null : _toggleConnect,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -465,10 +467,32 @@ class _ConnectPageState extends State<ConnectPage> {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              'frpc ${frpcManager.installedVersion} · ${Platform.operatingSystem}',
-              style: TextStyle(fontSize: 12, color: scheme.outline),
-            ),
+            if (!FrpcManager.frpcSupported)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: scheme.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 18, color: scheme.onErrorContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '当前平台暂不支持内置 frpc，Android / 鸿蒙版将在后续版本提供',
+                        style: TextStyle(fontSize: 13, color: scheme.onErrorContainer),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Text(
+                'frpc ${frpcManager.installedVersion} · ${Platform.operatingSystem}',
+                style: TextStyle(fontSize: 12, color: scheme.outline),
+              ),
           ],
         ),
       ),
