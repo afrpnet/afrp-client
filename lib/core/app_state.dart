@@ -18,7 +18,7 @@ class AppState extends ChangeNotifier {
   final SecretStore _secrets;
   SharedPreferences? _prefs;
 
-  /// 服务器地址（可在设置页修改，默认生产站）
+  /// 服务器地址（由 config.oidcIssuer 自动设定，默认生产站）
   String baseUrl = defaultBaseUrl;
 
   late ApiClient api;
@@ -158,6 +158,19 @@ class AppState extends ChangeNotifier {
   Future<void> loadConfig() async {
     final data = await api.get('/api/config.php');
     config = PublicConfig.fromJson(data);
+    // 用后台 OIDC Issuer（网站地址）作为服务器地址
+    final issuer = config!.oidcIssuer.trim();
+    if (issuer.isNotEmpty) {
+      final uri = Uri.tryParse(issuer);
+      if (uri != null && uri.hasScheme && uri.hasAuthority) {
+        final issuerBase = '${uri.scheme}://${uri.authority}';
+        if (issuerBase != baseUrl) {
+          baseUrl = issuerBase;
+          await _prefs?.setString(_kBaseUrl, baseUrl);
+          api.baseUrl = baseUrl;
+        }
+      }
+    }
     notifyListeners();
   }
 
@@ -401,17 +414,6 @@ class AppState extends ChangeNotifier {
   }
 
   /* ==================== 设置 ==================== */
-
-  Future<void> setBaseUrl(String url) async {
-    baseUrl = url.trim();
-    await _prefs?.setString(_kBaseUrl, baseUrl);
-    api.baseUrl = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
-    canBuy = false;
-    plansLoaded = false;
-    notifyListeners();
-  }
 }
 
 /// 全局单例

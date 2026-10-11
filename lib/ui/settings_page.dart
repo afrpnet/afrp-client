@@ -11,7 +11,7 @@ import '../frpc/frpc_manager.dart';
 import 'common.dart';
 import 'update_dialogs.dart';
 
-/// 设置页：账号信息、服务器地址、OIDC 密钥状态、组件更新、关于与退出登录
+/// 设置页：账号信息、OIDC 密钥状态、组件更新、关于与退出登录
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -20,41 +20,12 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  late final TextEditingController _baseUrl = TextEditingController(text: appState.baseUrl);
-  bool _checking = false;
   bool _checkingFrpc = false;
   bool _checkingApp = false;
 
   @override
   void dispose() {
-    _baseUrl.dispose();
     super.dispose();
-  }
-
-  Future<void> _saveBaseUrl() async {
-    final url = _baseUrl.text.trim();
-    if (url.isEmpty) {
-      snack(context, '请输入服务器地址', error: true);
-      return;
-    }
-    setState(() => _checking = true);
-    try {
-      await appState.setBaseUrl(url);
-      await appState.loadConfig();
-      if (!mounted) {
-        return;
-      }
-      final name = appState.config?.siteName ?? '';
-      snack(context, name.isEmpty ? '已保存并连接成功' : '已保存，站点：$name');
-    } on ApiException catch (e) {
-      if (mounted) {
-        snack(context, '连接失败：${e.message}（地址已保存）', error: true);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _checking = false);
-      }
-    }
   }
 
   @override
@@ -69,8 +40,6 @@ class _SettingsPageState extends State<SettingsPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
             children: [
               _accountCard(user),
-              const SizedBox(height: 12),
-              _serverCard(),
               const SizedBox(height: 12),
               _secretCard(),
               const SizedBox(height: 12),
@@ -152,46 +121,6 @@ class _SettingsPageState extends State<SettingsPage> {
           SizedBox(width: 92, child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
           Expanded(child: Text(value)),
         ],
-      ),
-    );
-  }
-
-  Widget _serverCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.dns_outlined, size: 20),
-                const SizedBox(width: 8),
-                Text('服务器地址', style: Theme.of(context).textTheme.titleMedium),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _baseUrl,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                hintText: 'https://www.afrp.net',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.tonalIcon(
-                icon: _checking
-                    ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Icon(Icons.wifi_tethering, size: 18),
-                label: const Text('保存并测试连接'),
-                onPressed: _checking ? null : _saveBaseUrl,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
