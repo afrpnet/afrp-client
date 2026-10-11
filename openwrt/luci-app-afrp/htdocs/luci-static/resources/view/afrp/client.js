@@ -182,7 +182,7 @@ return view.extend({
 		}
 
 		function autoInstallFrpc(arch) {
-			return fs.exec(UPDATE_CORE, ['check', DEFAULT_BASE, arch || '']).then(function(res) {
+			return fs.exec(UPDATE_CORE, ['check', '', arch || '']).then(function(res) {
 				var d = null;
 				try { d = JSON.parse((res.stdout || '').trim()); } catch (e) { d = null; }
 				if (!d || !d.ok || !d.candidates || !d.candidates.length) {

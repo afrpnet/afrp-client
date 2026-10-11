@@ -2,10 +2,9 @@
 // AFRP frpc 核心更新工具（由 LuCI「运行状态」页调用）
 // 用法：
 //   update-core status
-//   update-core check <base_url> <arch>
+//   update-core check <base_url> <arch>   // base_url 已废弃，保留兼容
 //   update-core install <url> <sha256> [file]
-// 清单格式与 App 端 updater 一致：/download/manifest.json
-// 条目字段 id kind platform channel arch version file url sha256 size date notes latest
+// 数据源：GitHub fatedier/frp Releases（直连不通自动走代理镜像）
 
 import { popen, readfile } from 'fs';
 
@@ -136,85 +135,44 @@ function cmdStatus() {
 	});
 }
 
-function cmdCheck(base, arch) {
-	base = trim(str(base));
-	if (match(base, regexp('^https?://')) == null) {
-		fail('更新地址无效：' + base);
-	}
-	if (found(base, "'")) {
-		fail('更新地址包含非法字符');
-	}
-	base = replace(base, regexp('/+$'), '');
-
+function cmdCheck(_base, arch) {
 	let detArch = trim(str(arch));
 	if (detArch == '') {
 		detArch = detectArch();
 	}
-
-	let manifestUrl = base + '/download/manifest.json';
-	let q = shq(manifestUrl);
-	if (q == null) {
-		fail('更新地址包含非法字符');
-	}
-	let raw = run('uclient-fetch -q -T 30 -O - ' + q + ' 2>/dev/null');
-	if (trim(raw) == '') {
-		fail('无法获取更新清单，请检查路由器网络或更新地址');
+	if (detArch == '') {
+		fail('无法检测设备架构');
 	}
 
-	let man = null;
-	try {
-		man = json(raw);
-	} catch (e) {
-		fail('更新清单解析失败（站点返回的不是有效 JSON）');
+	// 从 GitHub Atom feed 获取最新版本号
+	let feed = run("uclient-fetch -q -T 15 -O - 'https://github.com/fatedier/frp/releases.atom' 2>/dev/null");
+	let vm = match(feed, regexp('<title>[[:space:]]*v([0-9]+[.][0-9]+[.][0-9]+)[[:space:]]*</title>'));
+	if (vm == null) {
+		fail('无法从 GitHub 获取 frp 最新版本，请检查网络');
 	}
-	if (type(man) != 'object' || type(man.items) != 'array') {
-		fail('更新清单格式不正确');
-	}
+	let ver = vm[1];
 
-	let availableArch = [];
-	let candidates = [];
-	for (let i = 0; i < length(man.items); i++) {
-		let it = man.items[i];
-		if (type(it) != 'object') {
-			continue;
-		}
-		if (str(it.kind) != 'frpc' || str(it.platform) != 'openwrt') {
-			continue;
-		}
-		let ia = str(it.arch);
-		if (ia != '' && !listHas(availableArch, ia)) {
-			availableArch[length(availableArch)] = ia;
-		}
-		if (it.latest != true) {
-			continue;
-		}
-		if (str(it.url) == '') {
-			continue;
-		}
-		if (ia != '' && detArch != '' && ia != detArch) {
-			continue;
-		}
-		candidates[length(candidates)] = {
-			id: str(it.id),
-			version: str(it.version),
-			url: str(it.url),
-			sha256: str(it.sha256),
-			file: str(it.file),
-			size: it.size == null ? 0 : it.size,
-			date: str(it.date),
-			notes: str(it.notes),
-			arch: ia
-		};
-	}
+	// 构造 GitHub 下载 URL
+	let ghUrl = 'https://github.com/fatedier/frp/releases/download/v' + ver + '/frp_' + ver + '_linux_' + detArch + '.tar.gz';
 
 	emit({
 		ok: true,
-		base: base,
-		manifest_url: manifestUrl,
+		source: 'github',
+		version: ver,
 		arch: detArch,
 		current_version: readVersion(),
-		candidates: candidates,
-		available_arch: availableArch
+		candidates: [{
+			id: 'gh-frpc-linux-' + detArch,
+			version: ver,
+			url: ghUrl,
+			sha256: '',
+			file: 'frp_' + ver + '_linux_' + detArch + '.tar.gz',
+			size: 0,
+			date: '',
+			notes: 'GitHub Release',
+			arch: detArch
+		}],
+		available_arch: [detArch]
 	});
 }
 
@@ -226,15 +184,11 @@ function cmdInstall(url, sha256, fname) {
 	if (match(url, regexp('^https?://')) == null) {
 		fail('下载地址无效');
 	}
-	if (match(sha256, regexp('^[0-9a-fA-F]{64}$')) == null) {
+	if (sha256 != '' && match(sha256, regexp('^[0-9a-fA-F]{64}$')) == null) {
 		fail('SHA-256 校验值无效，已拒绝安装');
 	}
 	if (fname != '' && match(fname, regexp('^[A-Za-z0-9][A-Za-z0-9._-]*$')) == null) {
 		fail('文件名无效');
-	}
-	let qu = shq(url);
-	if (qu == null) {
-		fail('下载地址包含非法字符');
 	}
 
 	okCmd('rm -rf /tmp/afrp');
@@ -243,20 +197,41 @@ function cmdInstall(url, sha256, fname) {
 	}
 
 	let dl = '/tmp/afrp/download.bin';
-	if (!okCmd('uclient-fetch -q -T 300 -O ' + shq(dl) + ' ' + qu)) {
-		fail('下载 frpc 失败，请检查路由器网络或更新地址');
-	}
-	if (!okCmd('test -s ' + shq(dl))) {
-		fail('下载到的文件为空');
+
+	// 尝试多个源：GitHub 直连 → 代理镜像
+	let sources = [url];
+	if (found(url, 'github.com')) {
+		sources[length(sources)] = replace(url, 'https://github.com/', 'https://ghfast.top/');
+		sources[length(sources)] = replace(url, 'https://github.com/', 'https://gh-proxy.com/');
+		sources[length(sources)] = replace(url, 'https://github.com/', 'https://ghproxy.net/');
 	}
 
-	let out = run('sha256sum ' + shq(dl) + ' 2>/dev/null');
-	let m = match(out, regexp('^[0-9a-fA-F]{64}'));
-	if (m == null) {
-		fail('无法计算文件校验值（系统缺少 sha256sum）');
+	let downloaded = false;
+	for (let i = 0; i < length(sources); i++) {
+		let qs = shq(sources[i]);
+		if (qs == null) {
+			continue;
+		}
+		if (okCmd('uclient-fetch -q -T 60 -O ' + shq(dl) + ' ' + qs + ' 2>/dev/null') && okCmd('test -s ' + shq(dl))) {
+			downloaded = true;
+			break;
+		}
+		okCmd('rm -f ' + shq(dl));
 	}
-	if (match(m[0], regexp('^' + sha256 + '$', 'i')) == null) {
-		fail('SHA-256 校验失败，文件不完整或已被篡改');
+	if (!downloaded) {
+		fail('下载 frpc 失败（GitHub 及所有代理均不可达），请检查路由器网络');
+	}
+
+	// SHA-256 校验（如果提供了校验值）
+	if (sha256 != '') {
+		let out = run('sha256sum ' + shq(dl) + ' 2>/dev/null');
+		let m = match(out, regexp('^[0-9a-fA-F]{64}'));
+		if (m == null) {
+			fail('无法计算文件校验值（系统缺少 sha256sum）');
+		}
+		if (match(m[0], regexp('^' + sha256 + '$', 'i')) == null) {
+			fail('SHA-256 校验失败，文件不完整或已被篡改');
+		}
 	}
 
 	let src = dl;
@@ -267,6 +242,7 @@ function cmdInstall(url, sha256, fname) {
 		if (!okCmd('tar -xzf ' + shq(dl) + ' -C /tmp/afrp/x')) {
 			fail('解压 frpc 压缩包失败');
 		}
+		// 清理非 frpc 文件，只保留二进制
 		let hit = trim(run('find /tmp/afrp/x -type f -name frpc 2>/dev/null | head -n1'));
 		if (hit == '') {
 			hit = trim(run('find /tmp/afrp/x -type f -name "frpc*" 2>/dev/null | head -n1'));
