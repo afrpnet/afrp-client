@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   create-release:
@@ -352,5 +353,9 @@ jobs:
               sleep 2
             done
           }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Trigger GitHub Pages deployment
+        run: gh workflow run "Deploy GitHub Pages" --ref main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
