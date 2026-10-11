@@ -271,7 +271,7 @@ jobs:
 
       - name: Install flutter-ohos toolchain
         run: |
-          git clone --depth 1 https://atomgit.com/CPF-Flutter/flutter_flutter.git -b oh-3.44.9-dev ~/flutter-ohos
+          git clone --depth 1 https://atomgit.com/CPF-Flutter/flutter_flutter.git -b oh-3.47.4-dev ~/flutter-ohos
           export PATH="$HOME/flutter-ohos/bin:$PATH"
           flutter precache
           flutter config --no-analytics
