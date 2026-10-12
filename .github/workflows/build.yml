@@ -378,6 +378,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 清理旧版本文件
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          echo "当前版本: $VER"
+          echo "清理前的文件列表："
+          ls -lh dist/ || true
+          
+          # 删除不是当前版本的文件
+          for f in dist/*; do
+            [ -f "$f" ] || continue
+            filename=$(basename "$f")
+            
+            # 提取文件中的版本号
+            if [[ "$filename" =~ _([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+              file_ver="${BASH_REMATCH[1]}"
+              if [ "$file_ver" != "$VER" ]; then
+                echo "删除旧版本文件: $filename (版本 $file_ver)"
+                rm -f "$f"
+              fi
+            fi
+          done
+          
+          echo "清理后的文件列表："
+          ls -lh dist/ || true
+
       - name: 上传所有产物到 Cloudflare R2（app/）
         if: env.R2_ACCOUNT_ID != ''
         continue-on-error: true
