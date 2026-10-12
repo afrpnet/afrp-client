@@ -451,7 +451,7 @@ jobs:
           
           # 上传最终 manifest 到网站
           echo "📤 推送 manifest 到网站 API..."
-          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${CI_API_URL}/api/ci/update-manifest" \
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${CI_API_URL}/api/ci/update-manifest.php" \
             -H "Authorization: Bearer ${CI_API_SECRET}" \
             -F "manifest=@/tmp/manifest-updated.json")
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
