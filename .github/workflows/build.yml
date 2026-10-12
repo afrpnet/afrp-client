@@ -411,7 +411,7 @@ jobs:
           cat > opkg/Packages << EOF
           Package: luci-app-afrp
           Version: ${VER}
-          Depends: luci-base, uclient-fetch, ca-bundle
+          Depends: luci-base, uclient-fetch, ca-bundle, frpc
           License: MIT
           Section: luci
           Architecture: all
