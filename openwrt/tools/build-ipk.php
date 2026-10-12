@@ -312,9 +312,7 @@ function build(): array
     if (@file_put_contents($tgzPath, $tgzGz) === false) { die_msg('写入失败: ' . $tgzPath); }
 
     // ---- opkg Packages 索引（用于 GitHub Release 作为 opkg 源）
-    $desc    = 'AFRP NAT traversal support and management by afrp.net.';
-    $descCont = ' Manage frpc tunnels with OIDC authentication, auto-update' . "\n"
-              . ' frpc core, and monitor connection status from LuCI.';
+    $desc    = 'AFRP frpc tunnel management by afrp.net';
     $ipkSize = (int)filesize($ipkPath);
     $ipkSha  = (string)hash_file('sha256', $ipkPath);
     $pkgIndex = "Package: luci-app-afrp\n"
@@ -327,8 +325,7 @@ function build(): array
         . "Filename: {$ipkName}\n"
         . "Size: {$ipkSize}\n"
         . "SHA256sum: {$ipkSha}\n"
-        . "Description: {$desc}\n"
-        . "{$descCont}\n\n";
+        . "Description: {$desc}\n\n";
     $pkgPath = $DIST . '/Packages';
     if (@file_put_contents($pkgPath, $pkgIndex) === false) { die_msg('写入失败: ' . $pkgPath); }
     $pkgGzPath = $DIST . '/Packages.gz';
