@@ -134,15 +134,19 @@ $manifest_tmp = getenv('MANIFEST_TMP');
 $manifest = json_decode(file_get_contents($manifest_tmp), true) ?: ['schema' => 1, 'items' => []];
 $items = $manifest['items'] ?? [];
 
-// 关闭同平台通道的旧条目的 latest 标记
-foreach ($items as &$it) {
-    if ($it['kind'] === $kind && $it['platform'] === $platform && $it['channel'] === $channel && $it['arch'] === $arch) {
-        $it['latest'] = false;
+// 移除同 kind+platform+channel+arch 的旧条目（只保留最新版本）
+$filteredItems = [];
+foreach ($items as $it) {
+    // 如果与当前文件是同类型同平台同通道同架构，跳过（用新版本替换）
+    if ($it['kind'] === $kind && $it['platform'] === $platform && 
+        $it['channel'] === $channel && $it['arch'] === $arch) {
+        continue;
     }
+    $filteredItems[] = $it;
 }
-unset($it);
+$items = $filteredItems;
 
-// 添加新条目
+// 添加新条目（标记为 latest）
 $newItem = [
     'id' => md5("{$kind}-{$platform}-{$channel}-{$arch}"),
     'kind' => $kind,
