@@ -288,15 +288,15 @@ function sortCandidates(list) {
 function cmpVer(a, b) {
 	function parts(v) {
 		return String(v || '').replace(/^[vV]/, '').split('.').map(function(s) {
-			var m = /^\d+/.exec(s);
+			let m = /^\d+/.exec(s);
 			return m ? parseInt(m[0], 10) : 0;
 		});
 	}
-	var pa = parts(a), pb = parts(b);
-	var n = Math.max(pa.length, pb.length);
-	for (var i = 0; i < n; i++) {
-		var x = i < pa.length ? pa[i] : 0;
-		var y = i < pb.length ? pb[i] : 0;
+	let pa = parts(a), pb = parts(b);
+	let n = Math.max(pa.length, pb.length);
+	for (let i = 0; i < n; i++) {
+		let x = i < pa.length ? pa[i] : 0;
+		let y = i < pb.length ? pb[i] : 0;
 		if (x != y)
 			return x < y ? -1 : 1;
 	}
