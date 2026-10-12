@@ -360,8 +360,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # 上传构建产物到国内网盘（坚果云 + 123 云盘）
-  upload-to-cloud-drives:
+  # 上传构建产物到云存储并更新 manifest
+  upload-and-update-manifest:
     needs: [build-windows, build-macos-arm64, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
@@ -373,112 +373,83 @@ jobs:
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           mkdir -p dist
           cd dist
-          gh release download "v$VER" --pattern '*' --clobber
+          gh release download "v$VER" --pattern '*' --clobber || echo "⚠️ 部分文件下载失败，继续处理"
           ls -la
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 上传到坚果云
-        if: env.JGY_USERNAME != ''
-        run: |
-          chmod +x .github/scripts/upload-jgy.sh
-          for f in dist/*; do
-            [ -f "$f" ] && bash .github/scripts/upload-jgy.sh "$f" || true
-          done
-        env:
-          JGY_USERNAME: ${{ secrets.JGY_USERNAME }}
-          JGY_PASSWORD: ${{ secrets.JGY_PASSWORD }}
-
-      - name: 上传到 123 云盘
-        if: env.PAN123_USERNAME != ''
-        run: |
-          chmod +x .github/scripts/upload-123.sh
-          for f in dist/*; do
-            [ -f "$f" ] && bash .github/scripts/upload-123.sh "$f" || true
-          done
-        env:
-          PAN123_USERNAME: ${{ secrets.PAN123_USERNAME }}
-          PAN123_PASSWORD: ${{ secrets.PAN123_PASSWORD }}
-
       - name: 上传到 Cloudflare R2（App）
         if: env.R2_ACCOUNT_ID != ''
+        continue-on-error: true
         run: |
           chmod +x .github/scripts/upload-r2.sh
-          # App 文件上传到 app/ 子目录
+          uploaded_count=0
+          failed_count=0
           for f in dist/afrp-oidc-client_*; do
             [ -f "$f" ] || continue
             echo "=== 上传 $f 到 R2 (app/) ==="
-            max_retries=3
-            uploaded=false
-            for attempt in $(seq 1 $max_retries); do
-              if bash .github/scripts/upload-r2.sh "$f" "app"; then
-                uploaded=true
-                break
-              else
-                remaining=$((max_retries - attempt))
-                if [ $remaining -gt 0 ]; then
-                  echo "⚠️ 第 $attempt 次尝试失败，${remaining} 秒后重试..."
-                  sleep 5
-                else
-                  echo "❌ R2 上传失败（已重试 $max_retries 次）"
-                fi
-              fi
-            done
-            if [ "$uploaded" = false ]; then
+            if bash .github/scripts/upload-r2.sh "$f" "app"; then
+              uploaded_count=$((uploaded_count + 1))
+            else
+              failed_count=$((failed_count + 1))
               echo "::warning::R2 上传失败: $f"
             fi
           done
+          echo "✅ App 上传完成：成功 $uploaded_count, 失败 $failed_count"
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-      - name: 上传到 Cloudflare R2（frpc）
+      - name: 上传到 Cloudflare R2（frpc/OpenWrt）
         if: env.R2_ACCOUNT_ID != ''
+        continue-on-error: true
         run: |
           chmod +x .github/scripts/upload-r2.sh
-          # frpc 文件上传到 frpc/ 子目录
-          for f in dist/frpc_* dist/*.ipk dist/*.tar.gz; do
+          uploaded_count=0
+          failed_count=0
+          for f in dist/frpc_* dist/luci-app-afrp_*; do
             [ -f "$f" ] || continue
-            echo "=== 上传 $f 到 R2 (frpc/) ==="
-            max_retries=3
-            uploaded=false
-            for attempt in $(seq 1 $max_retries); do
-              if bash .github/scripts/upload-r2.sh "$f" "frpc"; then
-                uploaded=true
-                break
-              else
-                remaining=$((max_retries - attempt))
-                if [ $remaining -gt 0 ]; then
-                  echo "⚠️ 第 $attempt 次尝试失败，${remaining} 秒后重试..."
-                  sleep 5
-                else
-                  echo "❌ R2 上传失败（已重试 $max_retries 次）"
-                fi
-              fi
-            done
-            if [ "$uploaded" = false ]; then
+            subdir="frpc"
+            echo "=== 上传 $f 到 R2 ($subdir/) ==="
+            if bash .github/scripts/upload-r2.sh "$f" "$subdir"; then
+              uploaded_count=$((uploaded_count + 1))
+            else
+              failed_count=$((failed_count + 1))
               echo "::warning::R2 上传失败: $f"
             fi
           done
+          echo "✅ frpc/OpenWrt 上传完成：成功 $uploaded_count, 失败 $failed_count"
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-      - name: 输出下载链接
+      - name: 生成并推送 manifest 到网站
+        if: env.CI_API_SECRET != '' && env.CI_API_URL != ''
+        run: |
+          chmod +x .github/scripts/push-manifest.sh
+          bash .github/scripts/push-manifest.sh
+        env:
+          CI_API_SECRET: ${{ secrets.CI_API_SECRET }}
+          CI_API_URL: ${{ secrets.CI_API_URL }}
+          SITE_URL: ${{ secrets.SITE_URL || 'https://www.afrp.net' }}
+
+      - name: 输出统计信息
         run: |
           echo ""
           echo "=========================================="
-          echo "📥 上传完成"
+          echo "📊 构建与上传统计"
           echo "=========================================="
-          echo "  123 云盘：文件已上传（备份存储）"
-          echo "  Cloudflare R2：文件已上传（公开直链）"
-          echo "  坚果云：文件已上传（备份存储）"
-          echo ""
-          echo "请在后台配置分享链接："
-          echo "  - frpc: https://pub-xxx.r2.dev/frpc/"
-          echo "  - app: https://pub-xxx.r2.dev/app/"
+          echo "  GitHub Release: ✅ 已完成"
+          echo "  Cloudflare R2: 查看上方日志"
+          echo "  Manifest 推送: 查看上方日志"
+          echo "=========================================="
+          echo "📥 下载链接："
+          echo "  R2 (dl.afrp.net):"
+          for f in dist/*; do
+            [ -f "$f" ] && echo "    https://dl.afrp.net/app/$(basename $f)"
+          done
           echo ""

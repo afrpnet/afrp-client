@@ -154,59 +154,96 @@ function cmdCheck(base, arch) {
 	}
 	baseUrl = replace(baseUrl, /\/+$/, '');
 
-	// 从网站 manifest.json 获取 frpc 最新版本
-	let manifestUrl = baseUrl + '/download/manifest.json';
-	let manifestRaw = run("uclient-fetch -q -T 15 -O - '" + manifestUrl + "' 2>/dev/null");
-	if (!manifestRaw) {
-		fail('无法从网站获取更新清单，请检查网络');
-	}
-
-	let manifest = null;
-	try {
-		manifest = json(manifestRaw);
-	} catch (e) {
-		fail('更新清单格式错误');
-	}
-
-	if (!manifest || !manifest.items || length(manifest.items) == 0) {
-		fail('更新清单为空');
-	}
-
-	// 筛选 frpc + linux + 当前架构的最新条目
+	// 尝试从网站 manifest.json 获取
 	let candidates = [];
-	for (let i = 0; i < length(manifest.items); i++) {
-		let item = manifest.items[i];
-		if (item.kind != 'frpc') continue;
-		if (item.platform != 'linux' && item.platform != 'openwrt') continue;
-		if (item.arch && item.arch != 'all' && item.arch != detArch) continue;
-		if (!item.latest) continue;
-		if (!item.url || item.url == '') continue;
+	let source = '';
+	
+	try {
+		let manifestUrl = baseUrl + '/download/manifest.json';
+		let manifestRaw = run("uclient-fetch -q -T 15 -O - '" + manifestUrl + "' 2>/dev/null");
 		
-		candidates[length(candidates)] = {
-			id: item.id || ('frpc-' + item.platform + '-' + item.arch),
-			version: item.version,
-			url: item.url,
-			r2_url: (item.mirrors && length(item.mirrors) > 0) ? findR2Url(item.mirrors) : '',
-			sha256: item.sha256 || '',
-			file: item.file,
-			size: item.size || 0,
-			date: item.date || '',
-			notes: item.notes || '',
-			arch: item.arch || detArch
-		};
+		if (manifestRaw) {
+			let manifest = null;
+			try {
+				manifest = json(manifestRaw);
+			} catch (e) {
+				manifest = null;
+			}
+			
+			if (manifest && manifest.items && length(manifest.items) > 0) {
+				// 筛选 frpc + linux/openwrt + 当前架构的最新条目
+				for (let i = 0; i < length(manifest.items); i++) {
+					let item = manifest.items[i];
+					if (item.kind != 'frpc') continue;
+					if (item.platform != 'linux' && item.platform != 'openwrt') continue;
+					if (item.arch && item.arch != 'all' && item.arch != detArch) continue;
+					if (!item.latest) continue;
+					if (!item.url || item.url == '') continue;
+					
+					candidates[length(candidates)] = {
+						id: item.id || ('frpc-' + item.platform + '-' + item.arch),
+						version: item.version,
+						url: item.url,
+						r2_url: (item.mirrors && length(item.mirrors) > 0) ? findR2Url(item.mirrors) : '',
+						sha256: item.sha256 || '',
+						file: item.file,
+						size: item.size || 0,
+						date: item.date || '',
+						notes: item.notes || '',
+						arch: item.arch || detArch
+					};
+				}
+				
+				if (length(candidates) > 0) {
+					source = 'website';
+				}
+			}
+		}
+	} catch (e) {
+		// 网站获取失败，继续尝试 GitHub
 	}
-
+	
+	// 如果网站失败，回退到 GitHub Atom feed
+	if (source != 'website') {
+		try {
+			let feed = run("uclient-fetch -q -T 15 -O - 'https://github.com/fatedier/frp/releases.atom' 2>/dev/null");
+			let vm = match(feed, regexp('<title>[[:space:]]*v([0-9]+[.][0-9]+[.][0-9]+)[[:space:]]*</title>'));
+			
+			if (vm) {
+				let ver = vm[1];
+				let r2Url = 'https://dl.afrp.net/frpc/frp_' + ver + '_linux_' + detArch + '.tar.gz';
+				let ghUrl = 'https://github.com/fatedier/frp/releases/download/v' + ver + '/frp_' + ver + '_linux_' + detArch + '.tar.gz';
+				
+				candidates = [{
+					id: 'gh-frpc-linux-' + detArch,
+					version: ver,
+					url: ghUrl,
+					r2_url: r2Url,
+					sha256: '',
+					file: 'frp_' + ver + '_linux_' + detArch + '.tar.gz',
+					size: 0,
+					date: '',
+					notes: 'GitHub Release（备用源）',
+					arch: detArch
+				}];
+				source = 'github';
+			}
+		} catch (e) {
+			// GitHub 也失败
+		}
+	}
+	
 	if (length(candidates) == 0) {
-		fail('未找到适用于当前架构（' + detArch + '）的 frpc 核心');
+		fail('无法获取最新版本（网站和 GitHub 均不可达），请检查网络');
 	}
-
+	
 	// 按版本号排序，取最新的
 	candidates = sortCandidates(candidates);
 	let best = candidates[0];
-
+	
 	emit({
 		ok: true,
-		source: 'website',
+		source: source,
 		version: best.version,
 		arch: detArch,
 		current_version: currentVer,
