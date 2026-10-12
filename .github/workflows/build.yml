@@ -340,25 +340,6 @@ jobs:
           gh release upload "v$VER" dist/* --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Commit opkg feed for GitHub Pages
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add opkg/
-          git diff --cached --quiet || {
-            git commit -m "chore: update opkg feed for GitHub Pages"
-            for i in 1 2 3; do
-              git pull --rebase origin main && git push && break
-              echo "push 冲突，重试 ($i/3)…"
-              sleep 2
-            done
-          }
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Trigger GitHub Pages deployment
-        run: gh workflow run "Deploy GitHub Pages" --ref main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # 上传构建产物到云存储并更新 manifest
   upload-and-update-manifest:
@@ -402,6 +383,73 @@ jobs:
           
           echo "清理后的文件列表："
           ls -lh dist/ || true
+
+      - name: 更新 OpenWrt opkg 源
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          IPK_FILE=$(ls dist/luci-app-afrp_${VER}_all.ipk 2>/dev/null || true)
+          
+          if [ -z "$IPK_FILE" ]; then
+            echo "⚠️ 未找到 OpenWrt ipk 文件，跳过 opkg 源更新"
+            exit 0
+          fi
+          
+          echo "=== 更新 opkg 源到 v${VER} ==="
+          
+          # 配置 git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 清理并复制新文件
+          rm -f opkg/*.ipk opkg/Packages opkg/Packages.gz
+          cp "$IPK_FILE" opkg/
+          
+          # 生成 Packages 文件
+          SIZE=$(stat -c%s "$IPK_FILE" 2>/dev/null || stat -f%z "$IPK_FILE")
+          SHA256=$(sha256sum "$IPK_FILE" | cut -d' ' -f1)
+          
+          cat > opkg/Packages << EOF
+          Package: luci-app-afrp
+          Version: ${VER}
+          Depends: luci-base, uclient-fetch, ca-bundle
+          License: MIT
+          Section: luci
+          Architecture: all
+          Installed-Size: 60
+          Filename: luci-app-afrp_${VER}_all.ipk
+          Size: ${SIZE}
+          SHA256sum: ${SHA256}
+          Description: AFRP frpc tunnel management by afrp.net
+          
+          EOF
+          
+          # 去掉每行开头的空格（heredoc 缩进问题）
+          sed -i 's/^[[:space:]]*//' opkg/Packages
+          
+          gzip -kf opkg/Packages
+          
+          echo "📦 Packages 内容："
+          cat opkg/Packages
+          
+          # 提交并推送
+          git add opkg/
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update opkg feed to v${VER}"
+            for i in 1 2 3; do
+              git pull --rebase origin main && git push && break
+              echo "push 冲突，重试 ($i/3)…"
+              sleep 2
+            done
+            echo "✅ opkg 源已更新到 v${VER}"
+            
+            # 触发 GitHub Pages 部署
+            gh workflow run "Deploy GitHub Pages" --ref main
+            echo "✅ 已触发 GitHub Pages 部署"
+          else
+            echo "ℹ️ opkg 源无变化"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 上传所有产物到 Cloudflare R2（app/）
         if: env.R2_ACCOUNT_ID != ''
