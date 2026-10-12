@@ -390,12 +390,12 @@ jobs:
           JGY_PASSWORD: ${{ secrets.JGY_PASSWORD }}
 
       - name: 上传到 123 云盘
-        if: env.PAN123_CLIENT_ID != ''
+        if: env.PAN123_USERNAME != ''
         run: |
           chmod +x .github/scripts/upload-123.sh
           for f in dist/*; do
-            [ -f "$f" ] && bash .github/scripts/upload-123.sh "$f" "0" || true
+            [ -f "$f" ] && bash .github/scripts/upload-123.sh "$f" "/Afrp-Oidc-Client" || true
           done
         env:
-          PAN123_CLIENT_ID: ${{ secrets.PAN123_CLIENT_ID }}
-          PAN123_CLIENT_SECRET: ${{ secrets.PAN123_CLIENT_SECRET }}
+          PAN123_USERNAME: ${{ secrets.PAN123_USERNAME }}
+          PAN123_PASSWORD: ${{ secrets.PAN123_PASSWORD }}
