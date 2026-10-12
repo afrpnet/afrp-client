@@ -1,11 +1,10 @@
 #!/bin/bash
 # 上传文件到坚果云 WebDAV
-# 用法：upload-jgy.sh <文件路径> [远程目录]
+# 用法：upload-jgy.sh <文件路径>
 
 set -e
 
 FILE="$1"
-REMOTE_DIR="${2:-/apps/afrp-client}"
 
 if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
   echo "错误：文件不存在 - $FILE"
@@ -18,12 +17,18 @@ if [ -z "$JGY_USERNAME" ] || [ -z "$JGY_PASSWORD" ]; then
 fi
 
 FILENAME=$(basename "$FILE")
-URL="https://dav.jianguoyun.com/dav${REMOTE_DIR}/${FILENAME}"
+
+# 创建目录（如果不存在）
+echo "创建目录 /Afrp-Oidc-Client..."
+curl -s --user "${JGY_USERNAME}:${JGY_PASSWORD}" \
+  --request MKCOL \
+  "https://dav.jianguoyun.com/dav/Afrp-Oidc-Client/" || true
+
+URL="https://dav.jianguoyun.com/dav/Afrp-Oidc-Client/${FILENAME}"
 
 echo "上传 $FILENAME 到坚果云..."
 curl -f --user "${JGY_USERNAME}:${JGY_PASSWORD}" \
   -T "$FILE" \
   "$URL"
 
-echo "✅ 上传成功：$URL"
-echo "下载链接：https://www.jianguoyun.com/p/${FILENAME}"
+echo "✅ 上传成功"

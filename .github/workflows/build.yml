@@ -383,7 +383,7 @@ jobs:
         run: |
           chmod +x .github/scripts/upload-jgy.sh
           for f in dist/*; do
-            [ -f "$f" ] && bash .github/scripts/upload-jgy.sh "$f" "/apps/afrp-client" || true
+            [ -f "$f" ] && bash .github/scripts/upload-jgy.sh "$f" || true
           done
         env:
           JGY_USERNAME: ${{ secrets.JGY_USERNAME }}
