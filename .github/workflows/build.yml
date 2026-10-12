@@ -451,9 +451,17 @@ jobs:
           
           # 上传最终 manifest 到网站
           echo "📤 推送 manifest 到网站 API..."
-          curl -sS -X POST "${CI_API_URL}/api/ci/update-manifest" \
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${CI_API_URL}/api/ci/update-manifest" \
             -H "Authorization: Bearer ${CI_API_SECRET}" \
-            -F "manifest=@/tmp/manifest-updated.json" || echo "::warning::Manifest 推送失败"
+            -F "manifest=@/tmp/manifest-updated.json")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Manifest 推送失败 (HTTP $HTTP_CODE): $BODY"
+            exit 1
+          fi
+          echo "✅ Manifest 推送成功: $BODY"
         env:
           CI_API_SECRET: ${{ secrets.CI_API_SECRET }}
           CI_API_URL: ${{ secrets.CI_API_URL }}
