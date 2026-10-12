@@ -9,12 +9,18 @@ if [ -z "$TAG" ]; then
 fi
 VER="${TAG#v}"
 
+# 如果不是从 tag 触发，尝试从 pubspec.yaml 读取版本号
 if ! echo "$VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  echo "⚠️  无法从 tag '$TAG' 提取有效版本号，使用文件中的当前版本"
-  exit 0
+  if [ -f pubspec.yaml ]; then
+    VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+    echo "从 pubspec.yaml 读取版本: $VER"
+  else
+    echo "⚠️  无法确定版本号，使用文件中的当前版本"
+    exit 0
+  fi
+else
+  echo "从 tag 同步版本: $VER"
 fi
-
-echo "从 tag 同步版本: $VER"
 
 # pubspec.yaml (保留 build number)
 if [ -f pubspec.yaml ]; then
