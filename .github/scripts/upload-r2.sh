@@ -32,6 +32,11 @@ PUBLIC_URL="https://dl.afrp.net/${OBJECT_KEY}"
 
 echo "📤 上传 ${FILENAME} 到 Cloudflare R2 (${OBJECT_KEY})..."
 
+# 设置 AWS CLI 所需的环境变量
+export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+export AWS_DEFAULT_REGION="auto"
+
 # 最多重试 3 次
 MAX_RETRIES=3
 UPLOADED=false
@@ -51,6 +56,8 @@ for attempt in $(seq 1 $MAX_RETRIES); do
   elif command -v s3cmd &> /dev/null; then
     # 使用 s3cmd
     if s3cmd put "$FILE" "s3://${R2_BUCKET}/${OBJECT_KEY}" \
+      --access_key="${R2_ACCESS_KEY_ID}" \
+      --secret_key="${R2_SECRET_ACCESS_KEY}" \
       --host="${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" \
       --host-bucket="%(bucket)s.${R2_ACCOUNT_ID}.r2.cloudflarestorage.com" 2>&1; then
       UPLOADED=true
