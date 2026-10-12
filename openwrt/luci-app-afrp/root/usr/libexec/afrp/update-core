@@ -135,7 +135,7 @@ function cmdStatus() {
 	});
 }
 
-function cmdCheck(_base, arch) {
+function cmdCheck(base, arch) {
 	let detArch = trim(str(arch));
 	if (detArch == '') {
 		detArch = detectArch();
@@ -147,39 +147,116 @@ function cmdCheck(_base, arch) {
 	let currentVer = readVersion();
 	let hasFrpc = okCmd('test -x /usr/bin/frpc');
 
-	// 从 GitHub Atom feed 获取最新版本号
-	let feed = run("uclient-fetch -q -T 15 -O - 'https://github.com/fatedier/frp/releases.atom' 2>/dev/null");
-	let vm = match(feed, regexp('<title>[[:space:]]*v([0-9]+[.][0-9]+[.][0-9]+)[[:space:]]*</title>'));
-	if (vm == null) {
-		fail('无法从 GitHub 获取 frp 最新版本，请检查网络');
+	// 默认使用网站 manifest.json
+	let baseUrl = trim(str(base));
+	if (!baseUrl || !match(baseUrl, regexp('^https?://'))) {
+		baseUrl = 'https://www.afrp.net';
 	}
-	let ver = vm[1];
+	baseUrl = replace(baseUrl, /\/+$/, '');
 
-	// 构造 R2 下载 URL（优先）和 GitHub 下载 URL（备选）
-	let r2Url = 'https://dl.afrp.net/frpc/frp_' + ver + '_linux_' + detArch + '.tar.gz';
-	let ghUrl = 'https://github.com/fatedier/frp/releases/download/v' + ver + '/frp_' + ver + '_linux_' + detArch + '.tar.gz';
+	// 从网站 manifest.json 获取 frpc 最新版本
+	let manifestUrl = baseUrl + '/download/manifest.json';
+	let manifestRaw = run("uclient-fetch -q -T 15 -O - '" + manifestUrl + "' 2>/dev/null");
+	if (!manifestRaw) {
+		fail('无法从网站获取更新清单，请检查网络');
+	}
+
+	let manifest = null;
+	try {
+		manifest = json(manifestRaw);
+	} catch (e) {
+		fail('更新清单格式错误');
+	}
+
+	if (!manifest || !manifest.items || length(manifest.items) == 0) {
+		fail('更新清单为空');
+	}
+
+	// 筛选 frpc + linux + 当前架构的最新条目
+	let candidates = [];
+	for (let i = 0; i < length(manifest.items); i++) {
+		let item = manifest.items[i];
+		if (item.kind != 'frpc') continue;
+		if (item.platform != 'linux' && item.platform != 'openwrt') continue;
+		if (item.arch && item.arch != 'all' && item.arch != detArch) continue;
+		if (!item.latest) continue;
+		if (!item.url || item.url == '') continue;
+		
+		candidates[length(candidates)] = {
+			id: item.id || ('frpc-' + item.platform + '-' + item.arch),
+			version: item.version,
+			url: item.url,
+			r2_url: (item.mirrors && length(item.mirrors) > 0) ? findR2Url(item.mirrors) : '',
+			sha256: item.sha256 || '',
+			file: item.file,
+			size: item.size || 0,
+			date: item.date || '',
+			notes: item.notes || '',
+			arch: item.arch || detArch
+		};
+	}
+
+	if (length(candidates) == 0) {
+		fail('未找到适用于当前架构（' + detArch + '）的 frpc 核心');
+	}
+
+	// 按版本号排序，取最新的
+	candidates = sortCandidates(candidates);
+	let best = candidates[0];
 
 	emit({
 		ok: true,
-		source: 'github',
-		version: ver,
+		source: 'website',
+		version: best.version,
 		arch: detArch,
 		current_version: currentVer,
 		has_frpc_binary: hasFrpc,
-		candidates: [{
-			id: 'gh-frpc-linux-' + detArch,
-			version: ver,
-			url: ghUrl,
-			r2_url: r2Url,
-			sha256: '',
-			file: 'frp_' + ver + '_linux_' + detArch + '.tar.gz',
-			size: 0,
-			date: '',
-			notes: 'GitHub Release',
-			arch: detArch
-		}],
+		candidates: candidates,
 		available_arch: [detArch]
 	});
+}
+
+// 从 mirrors 数组中查找 R2 URL
+function findR2Url(mirrors) {
+	for (let i = 0; i < length(mirrors); i++) {
+		let m = mirrors[i];
+		if (m.name == '站内镜像' && m.url) {
+			return m.url;
+		}
+	}
+	return '';
+}
+
+// 按版本号排序（从高到低）
+function sortCandidates(list) {
+	for (let i = 1; i < length(list); i++) {
+		let key = list[i];
+		let j = i - 1;
+		while (j >= 0 && cmpVer(list[j].version, key.version) < 0) {
+			list[j + 1] = list[j];
+			j--;
+		}
+		list[j + 1] = key;
+	}
+	return list;
+}
+
+function cmpVer(a, b) {
+	function parts(v) {
+		return String(v || '').replace(/^[vV]/, '').split('.').map(function(s) {
+			var m = /^\d+/.exec(s);
+			return m ? parseInt(m[0], 10) : 0;
+		});
+	}
+	var pa = parts(a), pb = parts(b);
+	var n = Math.max(pa.length, pb.length);
+	for (var i = 0; i < n; i++) {
+		var x = i < pa.length ? pa[i] : 0;
+		var y = i < pb.length ? pb[i] : 0;
+		if (x != y)
+			return x < y ? -1 : 1;
+	}
+	return 0;
 }
 
 function cmdInstall(url, sha256, fname) {
