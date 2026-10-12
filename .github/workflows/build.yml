@@ -402,7 +402,7 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-      - name: 上传所有产物到 123 云盘
+      - name: 上传所有产物到 123 云盘（app/）
         if: env.PAN123_USERNAME != ''
         continue-on-error: true
         run: |
@@ -411,8 +411,8 @@ jobs:
           failed_count=0
           for f in dist/*; do
             [ -f "$f" ] || continue
-            echo "=== 上传 $(basename $f) 到 123 云盘 ==="
-            if bash .github/scripts/upload-123.sh "$f"; then
+            echo "=== 上传 $(basename $f) 到 123 云盘 (app/) ==="
+            if bash .github/scripts/upload-123.sh "$f" "app"; then
               uploaded_count=$((uploaded_count + 1))
             else
               failed_count=$((failed_count + 1))
