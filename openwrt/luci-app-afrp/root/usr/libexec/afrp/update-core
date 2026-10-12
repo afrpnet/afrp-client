@@ -122,9 +122,16 @@ function readVersion() {
 	return m == null ? '' : m[1];
 }
 
+function isRunning() {
+	// 检查 frpc 进程是否在运行
+	let out = run('pidof frpc 2>/dev/null');
+	let pids = trim(out);
+	return pids != '' && pids != null;
+}
+
 function cmdStatus() {
 	let installed = okCmd('test -x /usr/bin/frpc');
-	let running = okCmd('/etc/init.d/afrp running');
+	let running = isRunning();
 	emit({
 		ok: true,
 		installed: installed,
