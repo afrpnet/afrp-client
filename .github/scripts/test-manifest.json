@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "items": [
+    {
+      "id": "test-item",
+      "kind": "app",
+      "platform": "windows",
+      "channel": "installer",
+      "arch": "amd64",
+      "version": "1.1.6",
+      "file": "test.exe",
+      "url": "https://dl.afrp.net/app/test.exe",
+      "sha256": "abc123",
+      "size": 1024,
+      "date": "2026-10-13",
+      "notes": "Test entry",
+      "latest": true
+    }
+  ],
+  "updated": "2026-10-13 12:00:00",
+  "count": 1
+}
