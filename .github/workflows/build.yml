@@ -402,27 +402,28 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-      - name: 上传所有产物到 123 云盘（app/）
-        if: env.PAN123_USERNAME != ''
-        continue-on-error: true
-        run: |
-          chmod +x .github/scripts/upload-123.sh
-          uploaded_count=0
-          failed_count=0
-          for f in dist/*; do
-            [ -f "$f" ] || continue
-            echo "=== 上传 $(basename $f) 到 123 云盘 (app/) ==="
-            if bash .github/scripts/upload-123.sh "$f" "app"; then
-              uploaded_count=$((uploaded_count + 1))
-            else
-              failed_count=$((failed_count + 1))
-              echo "::warning::123 云盘上传失败: $f"
-            fi
-          done
-          echo "✅ 123 云盘上传完成：成功 $uploaded_count, 失败 $failed_count"
-        env:
-          PAN123_USERNAME: ${{ secrets.PAN123_USERNAME }}
-          PAN123_PASSWORD: ${{ secrets.PAN123_PASSWORD }}
+      # 123 云盘上传已禁用（速度太慢）
+      # - name: 上传所有产物到 123 云盘（app/）
+      #   if: env.PAN123_USERNAME != ''
+      #   continue-on-error: true
+      #   run: |
+      #     chmod +x .github/scripts/upload-123.sh
+      #     uploaded_count=0
+      #     failed_count=0
+      #     for f in dist/*; do
+      #       [ -f "$f" ] || continue
+      #       echo "=== 上传 $(basename $f) 到 123 云盘 (app/) ==="
+      #       if bash .github/scripts/upload-123.sh "$f" "app"; then
+      #         uploaded_count=$((uploaded_count + 1))
+      #       else
+      #         failed_count=$((failed_count + 1))
+      #         echo "::warning::123 云盘上传失败: $f"
+      #       fi
+      #     done
+      #     echo "✅ 123 云盘上传完成：成功 $uploaded_count, 失败 $failed_count"
+      #   env:
+      #     PAN123_USERNAME: ${{ secrets.PAN123_USERNAME }}
+      #     PAN123_PASSWORD: ${{ secrets.PAN123_PASSWORD }}
 
       - name: 生成并推送 manifest 到网站
         if: env.CI_API_SECRET != '' && env.CI_API_URL != ''
