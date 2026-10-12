@@ -122,8 +122,10 @@ elif ! curl -sS -o "$MANIFEST_TMP" "$MANIFEST_URL" 2>/dev/null; then
   echo '{"schema":1,"items":[]}' > "$MANIFEST_TMP"
 fi
 
+# 导出所有变量供 PHP 使用
+export FILE FILENAME KIND PLATFORM CHANNEL ARCH VER DATE NOTES SHA256 SIZE R2_URL GH_URL SITE_URL MANIFEST_TMP
+
 # 使用 PHP 更新 manifest（更安全）
-export MANIFEST_TMP
 php <<'PHP_SCRIPT'
 <?php
 $file = getenv('FILE');
