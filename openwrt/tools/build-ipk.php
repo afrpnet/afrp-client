@@ -319,16 +319,14 @@ function build(): array
     $ipkSha  = (string)hash_file('sha256', $ipkPath);
     $pkgIndex = "Package: luci-app-afrp\n"
         . "Version: {$ver}\n"
-        . "Depends: luci-base, uclient-fetch\n"
-        . "Recommends: ca-bundle\n"
-        . "SourceName: luci-app-afrp\n"
+        . "Depends: luci-base, uclient-fetch, ca-bundle\n"
         . "License: MIT\n"
         . "Section: luci\n"
         . "Architecture: all\n"
         . "Installed-Size: {$installedKb}\n"
         . "Filename: {$ipkName}\n"
         . "Size: {$ipkSize}\n"
-        . "SHA256: {$ipkSha}\n"
+        . "SHA256sum: {$ipkSha}\n"
         . "Description: {$desc}\n"
         . "{$descCont}\n";
     $pkgPath = $DIST . '/Packages';
@@ -578,16 +576,14 @@ function publish(string $webRoot, string $siteUrl, string $date, ?string $notes,
 
     $pkgIndex = "Package: luci-app-afrp\n"
         . "Version: {$b['ver']}\n"
-        . "Depends: luci-base, uclient-fetch\n"
-        . "Recommends: ca-bundle\n"
-        . "SourceName: luci-app-afrp\n"
+        . "Depends: luci-base, uclient-fetch, ca-bundle\n"
         . "License: MIT\n"
         . "Section: luci\n"
         . "Architecture: all\n"
         . "Installed-Size: {$ipkKb}\n"
         . "Filename: " . basename($ipkSrc) . "\n"
         . "Size: {$ipkSize}\n"
-        . "SHA256: {$ipkSha}\n"
+        . "SHA256sum: {$ipkSha}\n"
         . "Description: {$desc}\n"
         . "{$descCont}\n";
 
