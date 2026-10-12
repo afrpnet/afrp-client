@@ -378,16 +378,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 上传到 Cloudflare R2（App）
+      - name: 上传所有产物到 Cloudflare R2（app/）
         if: env.R2_ACCOUNT_ID != ''
         continue-on-error: true
         run: |
           chmod +x .github/scripts/upload-r2.sh
           uploaded_count=0
           failed_count=0
-          for f in dist/afrp-oidc-client_*; do
+          for f in dist/*; do
             [ -f "$f" ] || continue
-            echo "=== 上传 $f 到 R2 (app/) ==="
+            echo "=== 上传 $(basename $f) 到 R2 (app/) ==="
             if bash .github/scripts/upload-r2.sh "$f" "app"; then
               uploaded_count=$((uploaded_count + 1))
             else
@@ -395,47 +395,23 @@ jobs:
               echo "::warning::R2 上传失败: $f"
             fi
           done
-          echo "✅ App 上传完成：成功 $uploaded_count, 失败 $failed_count"
+          echo "✅ R2 上传完成：成功 $uploaded_count, 失败 $failed_count"
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-      - name: 上传到 Cloudflare R2（App 免安装版）
-        if: env.R2_ACCOUNT_ID != ''
-        continue-on-error: true
-        run: |
-          chmod +x .github/scripts/upload-r2.sh
-          uploaded_count=0
-          failed_count=0
-          for f in dist/afrp-oidc-client_*_portable.zip dist/afrp-oidc-client_*.tar.gz; do
-            [ -f "$f" ] || continue
-            echo "=== 上传 $f 到 R2 (app/) ==="
-            if bash .github/scripts/upload-r2.sh "$f" "app"; then
-              uploaded_count=$((uploaded_count + 1))
-            else
-              failed_count=$((failed_count + 1))
-              echo "::warning::R2 上传失败: $f"
-            fi
-          done
-          echo "✅ App 免安装版上传完成：成功 $uploaded_count, 失败 $failed_count"
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-
-      - name: 上传到 123 云盘（App）
+      - name: 上传所有产物到 123 云盘
         if: env.PAN123_USERNAME != ''
         continue-on-error: true
         run: |
           chmod +x .github/scripts/upload-123.sh
           uploaded_count=0
           failed_count=0
-          for f in dist/afrp-oidc-client_*; do
+          for f in dist/*; do
             [ -f "$f" ] || continue
-            echo "=== 上传 $f 到 123 云盘 ==="
+            echo "=== 上传 $(basename $f) 到 123 云盘 ==="
             if bash .github/scripts/upload-123.sh "$f"; then
               uploaded_count=$((uploaded_count + 1))
             else
@@ -443,34 +419,10 @@ jobs:
               echo "::warning::123 云盘上传失败: $f"
             fi
           done
-          echo "✅ App 123 云盘上传完成：成功 $uploaded_count, 失败 $failed_count"
+          echo "✅ 123 云盘上传完成：成功 $uploaded_count, 失败 $failed_count"
         env:
           PAN123_USERNAME: ${{ secrets.PAN123_USERNAME }}
           PAN123_PASSWORD: ${{ secrets.PAN123_PASSWORD }}
-
-      - name: 上传到 Cloudflare R2（OpenWrt 插件）
-        if: env.R2_ACCOUNT_ID != ''
-        continue-on-error: true
-        run: |
-          chmod +x .github/scripts/upload-r2.sh
-          uploaded_count=0
-          failed_count=0
-          for f in dist/luci-app-afrp_*; do
-            [ -f "$f" ] || continue
-            echo "=== 上传 $f 到 R2 (app/) ==="
-            if bash .github/scripts/upload-r2.sh "$f" "app"; then
-              uploaded_count=$((uploaded_count + 1))
-            else
-              failed_count=$((failed_count + 1))
-              echo "::warning::R2 上传失败: $f"
-            fi
-          done
-          echo "✅ OpenWrt 插件上传完成：成功 $uploaded_count, 失败 $failed_count"
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
       - name: 生成并推送 manifest 到网站
         if: env.CI_API_SECRET != '' && env.CI_API_URL != ''
