@@ -472,8 +472,8 @@ jobs:
           else
             DELETED=0
             for FILE in $FILES; do
-              # 提取文件名中的版本号
-              if [[ "$FILE" =~ _([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+              # 提取文件名中的版本号（支持下划线 _1.1.6 或连字符 -1.1.6）
+              if [[ "$FILE" =~ [_-]([0-9]+\.[0-9]+\.[0-9]+) ]]; then
                 FILE_VER="${BASH_REMATCH[1]}"
                 if [ "$FILE_VER" != "$VER" ]; then
                   echo "删除旧版本: $FILE (版本 $FILE_VER)"
