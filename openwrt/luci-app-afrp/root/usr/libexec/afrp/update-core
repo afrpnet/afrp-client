@@ -152,7 +152,8 @@ function cmdCheck(_base, arch) {
 	}
 	let ver = vm[1];
 
-	// 构造 GitHub 下载 URL
+	// 构造 R2 下载 URL（优先）和 GitHub 下载 URL（备选）
+	let r2Url = 'https://dl.afrp.net/frpc/frp_' + ver + '_linux_' + detArch + '.tar.gz';
 	let ghUrl = 'https://github.com/fatedier/frp/releases/download/v' + ver + '/frp_' + ver + '_linux_' + detArch + '.tar.gz';
 
 	emit({
@@ -165,6 +166,7 @@ function cmdCheck(_base, arch) {
 			id: 'gh-frpc-linux-' + detArch,
 			version: ver,
 			url: ghUrl,
+			r2_url: r2Url,
 			sha256: '',
 			file: 'frp_' + ver + '_linux_' + detArch + '.tar.gz',
 			size: 0,
@@ -198,12 +200,36 @@ function cmdInstall(url, sha256, fname) {
 
 	let dl = '/tmp/afrp/download.bin';
 
-	// 尝试多个源：GitHub 直连 → 代理镜像
-	let sources = [url];
+	// 尝试多个源：R2（站内镜像）→ GitHub 直连 → 代理镜像
+	let sources = [];
 	if (found(url, 'github.com')) {
+		// 从 GitHub URL 提取文件名，构造 R2 URL
+		let fm = match(url, regexp('/([^/]+[.]tar[.]gz)$'));
+		if (fm != null) {
+			sources[length(sources)] = 'https://dl.afrp.net/frpc/' + fm[1];
+		}
+		sources[length(sources)] = url;
 		sources[length(sources)] = replace(url, 'https://github.com/', 'https://ghfast.top/');
 		sources[length(sources)] = replace(url, 'https://github.com/', 'https://gh-proxy.com/');
 		sources[length(sources)] = replace(url, 'https://github.com/', 'https://ghproxy.net/');
+	} else if (found(url, 'dl.afrp.net')) {
+		// R2 URL 作为首选
+		sources[length(sources)] = url;
+		// 添加 GitHub 备选（如果能从文件名推断）
+		let fm = match(url, regexp('/frpc/([^/]+)$'));
+		if (fm != null) {
+			let fname = fm[1];
+			let vm = match(fname, regexp('frp_([0-9.]+)_linux_'));
+			if (vm != null) {
+				let ver = vm[1];
+				let am = match(fname, regexp('_linux_(.+)[.]tar[.]gz$'));
+				if (am != null) {
+					sources[length(sources)] = 'https://github.com/fatedier/frp/releases/download/v' + ver + '/' + fname;
+				}
+			}
+		}
+	} else {
+		sources[length(sources)] = url;
 	}
 
 	let downloaded = false;
@@ -219,7 +245,7 @@ function cmdInstall(url, sha256, fname) {
 		okCmd('rm -f ' + shq(dl));
 	}
 	if (!downloaded) {
-		fail('下载 frpc 失败（GitHub 及所有代理均不可达），请检查路由器网络');
+		fail('下载 frpc 失败（R2、GitHub 及所有代理均不可达），请检查路由器网络');
 	}
 
 	// SHA-256 校验（如果提供了校验值）

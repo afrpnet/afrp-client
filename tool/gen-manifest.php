@@ -10,6 +10,7 @@
  */
 
 $site = rtrim($argv[1] ?? 'https://www.afrp.net', '/');
+$r2BaseUrl = 'https://dl.afrp.net';
 $root = dirname(__DIR__);
 $dist = $root . '/dist';
 $date = date('Y-m-d');
@@ -63,6 +64,33 @@ foreach (glob($dist . '/*') ?: [] as $path) {
         if (!preg_match($re, $file, $m)) {
             continue;
         }
+        // 构建镜像链接：GitHub（官方） + R2（站内镜像）
+        $mirrors = [];
+        
+        // 判断是 frpc 还是 app，确定 GitHub repo
+        if ($platform === 'openwrt') {
+            // OpenWrt 走 GitHub Pages，不走 R2
+            $ghRepo = 'darny/afrp-openwrt';
+            $ghUrl = "https://github.com/{$ghRepo}/releases/latest/download/{$file}";
+            $mirrors[] = ['name' => 'GitHub', 'url' => $ghUrl];
+        } else {
+            // App 和 frpc 都走 R2
+            $subdir = ($channel === 'ipk' || $channel === 'tar.gz') ? 'frpc' : 'app';
+            $r2Url = "{$r2BaseUrl}/{$subdir}/{$file}";
+            
+            // 添加 GitHub 官方源
+            if ($platform === 'ohos') {
+                $ghRepo = 'afrpnet/afrp-client';
+            } else {
+                $ghRepo = 'afrpnet/afrp-client';
+            }
+            $ghUrl = "https://github.com/{$ghRepo}/releases/download/v{$m[1]}/{$file}";
+            $mirrors[] = ['name' => 'GitHub', 'url' => $ghUrl];
+            
+            // 添加 R2 站内镜像
+            $mirrors[] = ['name' => '站内镜像', 'url' => $r2Url];
+        }
+        
         $entry = [
             'kind' => 'app',
             'platform' => $platform,
@@ -76,6 +104,7 @@ foreach (glob($dist . '/*') ?: [] as $path) {
             'date' => $date,
             'notes' => $notes,
             'latest' => true,
+            'mirrors' => $mirrors,
         ];
         $found = false;
         foreach ($items as $i => $it) {

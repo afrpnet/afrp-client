@@ -13,7 +13,7 @@ import '../frpc/frpc_manager.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.1.4';
+const String kAppVersion = '1.1.5';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -118,6 +118,36 @@ String _trimBase(String baseUrl) => baseUrl.replaceAll(RegExp(r'/+$'), '');
 String manifestUrl(String baseUrl) => '${_trimBase(baseUrl)}/download/manifest.json';
 
 String downloadPageUrl(String baseUrl) => '${_trimBase(baseUrl)}/download/';
+
+// ---------------------------------------------------------------------------
+// Cloudflare R2 下载源（不限流量，优先使用）
+// ---------------------------------------------------------------------------
+
+/// R2 自定义域名
+const String kR2BaseUrl = 'https://dl.afrp.net';
+
+/// 构建 R2 下载 URL
+String r2DownloadUrl(String filename, {String subdir = ''}) {
+  if (subdir.isNotEmpty) {
+    return '$kR2BaseUrl/$subdir/$filename';
+  }
+  return '$kR2BaseUrl/$filename';
+}
+
+/// 判断文件名是否属于 frpc 类别
+bool isFrpcFile(String filename) {
+  return filename.startsWith('frp_') || 
+         filename.endsWith('.ipk') || 
+         filename.contains('luci-app-afrp');
+}
+
+/// 根据文件类型确定 R2 子目录
+String r2SubdirForFile(String filename) {
+  if (isFrpcFile(filename)) {
+    return 'frpc';
+  }
+  return 'app';
+}
 
 // ---------------------------------------------------------------------------
 // GitHub Release 更新源（官方 + 代理，按序回退）
@@ -417,7 +447,7 @@ UpdateEntry? chooseEntry(
 // ---------------------------------------------------------------------------
 
 /// 下载条目到临时目录并校验 SHA-256（清单未提供 sha256 时跳过校验）
-/// 支持多源回退：GitHub URL 会依次尝试官方和代理
+/// 支持多源回退：R2（站内镜像）→ GitHub URL 会依次尝试官方和代理
 Future<File> downloadUpdateFile(
   UpdateEntry entry, {
   void Function(int received, int total)? onProgress,
@@ -427,8 +457,23 @@ Future<File> downloadUpdateFile(
     throw UpdateException('该条目没有下载地址');
   }
 
-  // 判断是否为 GitHub URL，如果是则生成多源列表
+  // 构建下载 URL 列表：优先 R2，其次 GitHub
   final urls = <String>[];
+  
+  // 1. 添加 R2 站内镜像（如果 mirrors 中有）
+  final r2Mirror = (entry as dynamic).mirrors?.firstWhere(
+    (m) => m['name'] == '站内镜像',
+    orElse: () => null,
+  );
+  if (r2Mirror != null && r2Mirror['url'] != null) {
+    urls.add(r2Mirror['url'] as String);
+  } else {
+    // 如果没有 mirror，根据文件类型构造 R2 URL
+    final subdir = r2SubdirForFile(entry.file);
+    urls.add(r2DownloadUrl(entry.file, subdir: subdir));
+  }
+  
+  // 2. 如果是 GitHub URL，添加多源列表
   if (entry.url.contains('github.com/')) {
     // 从 URL 提取 repo/tag/name
     final ghMatch = RegExp(
@@ -444,7 +489,8 @@ Future<File> downloadUpdateFile(
     } else {
       urls.add(entry.url);
     }
-  } else {
+  } else if (!urls.contains(entry.url)) {
+    // 3. 添加原始 URL（如果不是 GitHub 且不在列表中）
     urls.add(entry.url);
   }
 
