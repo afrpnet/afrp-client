@@ -5,7 +5,10 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+
+import '../core/updater.dart';
 
 /// frpc 进程管理：运行前从 App 资源释放二进制到可写目录，
 /// 启动/停止进程，并把 stdout/stderr 作为日志行提供给 UI。
@@ -29,9 +32,17 @@ class FrpcManager extends ChangeNotifier {
   /// 已安装的 frpc 版本（读 .version 标记；从未释放过则为内置版本）
   String get installedVersion => _installedVersion ?? frpcVersion;
 
-  /// 当前平台是否支持内置 frpc（桌面端支持，移动端暂不支持）
-  static bool get frpcSupported =>
-      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  /// 当前平台是否支持内置 frpc（桌面端 + 移动端都支持）
+  static bool get frpcSupported {
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS || Platform.isAndroid) {
+      return true;
+    }
+    // 鸿蒙 OHOS
+    if (Platform.operatingSystem == 'ohos' || Platform.operatingSystem.contains('harmony')) {
+      return true;
+    }
+    return false;
+  }
 
   /// 按当前平台返回资源 key 与释放后的文件名；macOS 用 tar.gz 分发（规避平台查杀误报）
   static (String asset, String exeName) get _platformAsset {
@@ -43,6 +54,13 @@ class FrpcManager extends ChangeNotifier {
     }
     if (Platform.isMacOS) {
       return ('assets/frpc/macos/frpc_darwin_amd64.tar.gz', 'frpc');
+    }
+    if (Platform.isAndroid) {
+      return ('', 'frpc'); // Android 需要动态下载
+    }
+    // 鸿蒙 OHOS
+    if (Platform.operatingSystem == 'ohos' || Platform.operatingSystem.contains('harmony')) {
+      return ('', 'frpc'); // OHOS 需要动态下载
     }
     throw UnsupportedError('当前平台暂不支持内置 frpc');
   }
@@ -70,6 +88,14 @@ class FrpcManager extends ChangeNotifier {
       return bin.path;
     }
 
+    // Android / OHOS 需要动态下载 frpc
+    final isMobile = Platform.isAndroid ||
+        Platform.operatingSystem == 'ohos' ||
+        Platform.operatingSystem.contains('harmony');
+    if (isMobile) {
+      return await _downloadFrpcForMobile(bin, marker, exeName);
+    }
+
     final data = await rootBundle.load(assetKey);
     final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
     if (assetKey.endsWith('.tar.gz')) {
@@ -90,6 +116,70 @@ class FrpcManager extends ChangeNotifier {
     _binPath = bin.path;
     notifyListeners();
     return bin.path;
+  }
+
+  /// Android / OHOS 平台：从 manifest 下载 frpc 二进制
+  Future<String> _downloadFrpcForMobile(File bin, File marker, String exeName) async {
+    try {
+      // 获取设备架构
+      String arch;
+      final os = Platform.operatingSystem;
+      final isOhos = os == 'ohos' || os.contains('harmony');
+
+      if (Platform.version.contains('arm64') || Platform.version.contains('aarch64')) {
+        arch = 'arm64';
+      } else if (Platform.version.contains('arm')) {
+        arch = 'arm';
+      } else {
+        arch = 'amd64';
+      }
+
+      // 从网站获取 manifest
+      final client = http.Client();
+      try {
+        final manifestUrl = Uri.parse('https://www.afrp.net/download/manifest.json');
+        final response = await client.get(manifestUrl);
+        if (response.statusCode != 200) {
+          throw StateError('无法下载 manifest (HTTP ${response.statusCode})');
+        }
+
+        final manifestJson = json.decode(response.body) as Map<String, dynamic>;
+        final manifest = UpdateManifest.fromJson(manifestJson);
+
+        // Android/OHOS 都使用 Linux 二进制（manifest 中只有 linux 平台）
+        final entry = chooseEntry(manifest, kind: 'frpc', platform: 'linux', arch: arch);
+        if (entry == null) {
+          throw StateError('未找到适用于 $arch 架构的 frpc');
+        }
+
+        // 下载 frpc
+        final tempFile = await downloadUpdateFile(entry);
+
+        // 如果是 tar.gz，需要解压
+        if (entry.file.endsWith('.tar.gz')) {
+          final bytes = tempFile.readAsBytesSync();
+          final tar = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
+          final frpcEntry = tar.files.firstWhere(
+            (f) => f.isFile && f.name.contains('frpc'),
+            orElse: () => throw StateError('压缩包中未找到 frpc'),
+          );
+          bin.writeAsBytesSync(frpcEntry.content as List<int>, flush: true);
+        } else {
+          tempFile.copySync(bin.path);
+        }
+
+        await Process.run('chmod', ['755', bin.path]);
+        marker.writeAsStringSync(entry.version);
+        _installedVersion = entry.version;
+        _binPath = bin.path;
+        notifyListeners();
+        return bin.path;
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      throw StateError('frpc 下载失败：$e');
+    }
   }
 
   /// 重新读取磁盘上的已安装版本（标记缺失时回退内置版本），供设置页展示

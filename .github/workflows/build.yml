@@ -451,6 +451,45 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 清理 R2 旧版本文件
+        if: env.R2_ACCOUNT_ID != ''
+        continue-on-error: true
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          echo "当前版本: $VER"
+          echo "检查 R2 中的旧版本文件..."
+
+          export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+          export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+          export AWS_DEFAULT_REGION="auto"
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+
+          # 列出 R2 app/ 目录下的所有文件
+          FILES=$(aws s3 ls "s3://${R2_BUCKET}/app/" --endpoint-url "$ENDPOINT" 2>/dev/null | awk '{print $4}' || echo "")
+
+          if [ -z "$FILES" ]; then
+            echo "R2 中没有文件，无需清理"
+          else
+            DELETED=0
+            for FILE in $FILES; do
+              # 提取文件名中的版本号
+              if [[ "$FILE" =~ _([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+                FILE_VER="${BASH_REMATCH[1]}"
+                if [ "$FILE_VER" != "$VER" ]; then
+                  echo "删除旧版本: $FILE (版本 $FILE_VER)"
+                  aws s3 rm "s3://${R2_BUCKET}/app/$FILE" --endpoint-url "$ENDPOINT" 2>/dev/null || true
+                  DELETED=$((DELETED + 1))
+                fi
+              fi
+            done
+            echo "✅ 已清理 $DELETED 个旧版本文件"
+          fi
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
       - name: 上传所有产物到 Cloudflare R2（app/）
         if: env.R2_ACCOUNT_ID != ''
         continue-on-error: true
