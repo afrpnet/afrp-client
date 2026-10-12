@@ -168,7 +168,7 @@ class FrpcManager extends ChangeNotifier {
           tempFile.copySync(bin.path);
         }
 
-        await Process.run('chmod', ['755', bin.path]);
+        // Android/OHOS 应用支持目录下的文件默认有执行权限，无需 chmod
         marker.writeAsStringSync(entry.version);
         _installedVersion = entry.version;
         _binPath = bin.path;
