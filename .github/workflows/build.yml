@@ -359,3 +359,43 @@ jobs:
         run: gh workflow run "Deploy GitHub Pages" --ref main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 上传构建产物到国内网盘（坚果云 + 123 云盘）
+  upload-to-cloud-drives:
+    needs: [build-windows, build-macos-arm64, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 下载所有 Release 产物
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          mkdir -p dist
+          cd dist
+          gh release download "v$VER" --pattern '*' --clobber
+          ls -la
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 上传到坚果云
+        if: env.JGY_USERNAME != ''
+        run: |
+          chmod +x .github/scripts/upload-jgy.sh
+          for f in dist/*; do
+            [ -f "$f" ] && bash .github/scripts/upload-jgy.sh "$f" "/apps/afrp-client" || true
+          done
+        env:
+          JGY_USERNAME: ${{ secrets.JGY_USERNAME }}
+          JGY_PASSWORD: ${{ secrets.JGY_PASSWORD }}
+
+      - name: 上传到 123 云盘
+        if: env.PAN123_CLIENT_ID != ''
+        run: |
+          chmod +x .github/scripts/upload-123.sh
+          for f in dist/*; do
+            [ -f "$f" ] && bash .github/scripts/upload-123.sh "$f" "0" || true
+          done
+        env:
+          PAN123_CLIENT_ID: ${{ secrets.PAN123_CLIENT_ID }}
+          PAN123_CLIENT_SECRET: ${{ secrets.PAN123_CLIENT_SECRET }}
