@@ -12,7 +12,7 @@ LUCI_DESCRIPTION:=AFRP NAT traversal support and management by afrp.net. \
 Manage frpc tunnels with OIDC authentication, auto-update frpc core, \
 and monitor connection status from LuCI.
 
-LUCI_DEPENDS:=+uclient-fetch +ca-bundle
+LUCI_DEPENDS:=+uclient-fetch +ca-bundle +frpc
 LUCI_PKGARCH:=all
 
 # Feeds layout: package/luci-app-afrp/Makefile  -> ../../luci.mk

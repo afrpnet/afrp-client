@@ -219,7 +219,10 @@ return view.extend({
 				return;
 			btn.disabled = true;
 			coreInfo.textContent = _('正在下载并校验…文件较大时可能需要数十秒，请勿关闭页面。');
-			return fs.exec(UPDATE_CORE, [ 'install', entry.url, entry.sha256, entry.file ]).then(function(res) {
+			
+			// 优先使用 R2 URL（如果有）
+			var installUrl = entry.r2_url || entry.url;
+			return fs.exec(UPDATE_CORE, [ 'install', installUrl, entry.sha256, entry.file ]).then(function(res) {
 				var d = null;
 				try { d = JSON.parse((res.stdout || '').trim()); } catch (e) { d = null; }
 				if (d == null || d.ok != true)
