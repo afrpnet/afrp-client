@@ -111,10 +111,13 @@ else
 fi
 GH_URL="https://github.com/${GH_REPO}/releases/download/v${VER}/${FILENAME}"
 
-# 下载现有 manifest
+# 下载现有 manifest（如果已有本地更新则使用本地版本）
 echo "📥 下载现有 manifest..."
 MANIFEST_TMP=$(mktemp)
-if ! curl -sS -o "$MANIFEST_TMP" "$MANIFEST_URL" 2>/dev/null; then
+if [ -f /tmp/manifest-updated.json ]; then
+  echo "  使用本地已更新的 manifest"
+  cp /tmp/manifest-updated.json "$MANIFEST_TMP"
+elif ! curl -sS -o "$MANIFEST_TMP" "$MANIFEST_URL" 2>/dev/null; then
   echo "⚠️ 无法下载 manifest，创建新的"
   echo '{"schema":1,"items":[]}' > "$MANIFEST_TMP"
 fi
