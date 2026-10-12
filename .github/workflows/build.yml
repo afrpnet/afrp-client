@@ -435,8 +435,9 @@ jobs:
           git add opkg/
           if ! git diff --cached --quiet; then
             git commit -m "chore: update opkg feed to v${VER}"
+            git checkout -b temp-opkg-update
             for i in 1 2 3; do
-              git pull --rebase origin main && git push && break
+              git pull --rebase origin main && git push origin temp-opkg-update:main && break
               echo "push 冲突，重试 ($i/3)…"
               sleep 2
             done
