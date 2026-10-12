@@ -26,20 +26,37 @@ dist/                          打包产物（build-ipk.php 生成）
 ### 1. opkg 安装 .ipk（推荐）
 
 ```sh
-wget -O /tmp/afrp.ipk https://www.afrp.net/download/files/luci-app-afrp_1.1.0-1_all.ipk
+# 从 R2 高速下载（不限流量）
+wget -O /tmp/afrp.ipk https://dl.afrp.net/frpc/luci-app-afrp_1.1.5-1_all.ipk
+opkg install /tmp/afrp.ipk
+```
+
+或从 GitHub Releases 下载：
+```sh
+wget -O /tmp/afrp.ipk https://github.com/afrpnet/afrp-client/releases/latest/download/luci-app-afrp_1.1.5-1_all.ipk
 opkg install /tmp/afrp.ipk
 ```
 
 安装完刷新 LuCI（或 F5），菜单「服务 → AFRP frpc」。
 
 > 若提示签名相关错误：`opkg install --force-signature /tmp/afrp.ipk`。
+> 
+> **注意**：v1.1.5+ 版本依赖 `frpc` 包，如果官方源有则自动安装；如果没有，插件会在首次使用时从 R2 自动下载 frpc 核心。
 
 ### 2. 通用压缩包（无 opkg / 不想装包时）
 
 ```sh
-wget -O /tmp/afrp.tar.gz https://www.afrp.net/download/files/luci-app-afrp-1.1.0.tar.gz
+# 从 R2 高速下载
+wget -O /tmp/afrp.tar.gz https://dl.afrp.net/frpc/luci-app-afrp-1.1.5.tar.gz
 tar -xzf /tmp/afrp.tar.gz -C /tmp
-cd /tmp/luci-app-afrp-1.1.0 && ./install.sh
+cd /tmp/luci-app-afrp-1.1.5 && ./install.sh
+```
+
+或从 GitHub Releases 下载：
+```sh
+wget -O /tmp/afrp.tar.gz https://github.com/afrpnet/afrp-client/releases/latest/download/luci-app-afrp-1.1.5.tar.gz
+tar -xzf /tmp/afrp.tar.gz -C /tmp
+cd /tmp/luci-app-afrp-1.1.5 && ./install.sh
 ```
 
 卸载：同一目录 `./install.sh uninstall`（加 `--purge` 连配置一起删）。
@@ -57,19 +74,31 @@ cd .. && make defconfig && make package/luci-app-afrp/compile V=s
 
 ## 配置流程
 
-1. 打开 LuCI「服务 → AFRP frpc → 基础设置」，填入 `服务器地址 / 端口`（默认 7000）。
-2. 到官网「用户中心 → APP / 客户端」取得 `client_id` 与 `client_secret` 填入；
-   或直接使用下面的「官网导入」一步完成（推荐）。
-3. 「隧道管理」页添加隧道（类型、本地端口、子域名/自定义域名等），保存并应用。
-4. 「基础设置」勾选「启用」，或在「运行状态」页点「启动服务」。
+### 快速开始（推荐）
 
-配置保存在 `/etc/config/afrp`（UCI），运行配置由 `render` 生成到 `/var/etc/afrp.toml`
-（每次启动/重载自动重写，不要手工编辑）。
+1. **安装插件**后刷新 LuCI，进入「服务 → AFRP frpc → 运行状态」
+2. 点击「官网导入」，输入 afrp.net 账号密码，点击导入
+   - 自动获取服务器信息、OIDC 配置、客户端密钥
+   - 无需手动填写任何参数
+3. 切换到「隧道管理」添加隧道（类型、本地端口、子域名等），保存并应用
+4. 回到「基础设置」勾选「启用」，或直接在「运行状态」页点「启动服务」
 
-### 官网导入（推荐上手方式）
+### 手动配置（不推荐）
 
-「运行状态 → 官网导入」：填官网地址（默认取 https://www.afrp.net）、账号、密码，
-可选勾选「顺带重置客户端密钥」（用官网侧当前密钥覆盖本机），点击导入。插件会：
+如果无法使用官网导入，可手动填写：
+
+1. 「基础设置」页填入服务器地址/端口（默认 7000）
+2. 到官网「用户中心 → APP / 客户端」取得 `client_id` 与 `client_secret` 填入
+3. 「隧道管理」页添加隧道，保存并应用
+4. 勾选「启用」或点「启动服务」
+
+> 配置保存在 `/etc/config/afrp`（UCI），运行配置由 `render` 自动生成到 `/var/etc/afrp.toml`
+> （每次启动/重载自动重写，不要手工编辑 toml 文件）。
+
+### 官网导入工作原理
+
+「运行状态 → 官网导入」：填官网地址（默认 https://www.afrp.net）、账号、密码，
+可选勾选「顺带重置客户端密钥」，点击导入后插件会：
 
 1. 调官网 `/api/config.php` 拉取 OIDC 参数（issuer/audience/scope/token 地址）；
 2. 用账号密码调 `/api/login.php` 换临时令牌；
@@ -81,9 +110,21 @@ cd .. && make defconfig && make package/luci-app-afrp/compile V=s
 ### frpc 核心更新
 
 「运行状态 → 核心更新」会自动检测路由器架构（读 /etc/openwrt_release，回退 uname -m），
-从官网下载清单 manifest.json 中匹配 `frpc / openwrt / 最新` 条目，核对 sha256 后安装到
-`/usr/bin/frpc`。更新过程：下载 → 校验 → 解压 → 新文件预检（架构探测）→ 备份 → 原子替换，
+从网站 manifest.json 获取最新版本信息（网站不可用时自动切换到 GitHub Atom feed），
+匹配 `frpc / linux / 最新` 条目，核对 sha256 后安装到 `/usr/bin/frpc`。
+
+**下载源优先级：**
+1. R2 站内镜像（https://dl.afrp.net/frpc/）- 不限流量，速度最快
+2. GitHub Releases - 官方源
+3. GitHub 代理镜像 - ghfast.top / gh-proxy.com / ghproxy.net
+
+更新过程：检测版本 → 下载 → 校验 SHA-256 → 解压 → 新文件预检（架构探测）→ 备份 → 原子替换，
 失败自动回滚，不会把正在运行的 frpc 覆盖坏。
+
+**首次安装 frpc：**
+- v1.1.5+ 版本的 Makefile 添加了 `+frpc` 依赖，opkg 安装时会尝试从官方源安装 frpc 包
+- 如果官方源没有 frpc 包，插件会在用户点击"检查更新"时自动从 R2 下载并安装
+- 无需手动操作，打开 LuCI 页面按提示点击"下载并安装"即可
 
 frp 官方发布名与清单 arch 字段对照（清单由我们维护，会做映射）：
 
