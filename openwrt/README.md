@@ -26,7 +26,6 @@ dist/                          打包产物（build-ipk.php 生成）
 ### 1. opkg 安装 .ipk（推荐）
 
 ```sh
-# 从 R2 高速下载（不限流量）
 wget -O /tmp/afrp.ipk https://dl.afrp.net/frpc/luci-app-afrp_1.1.5-1_all.ipk
 opkg install /tmp/afrp.ipk
 ```
@@ -37,7 +36,7 @@ wget -O /tmp/afrp.ipk https://github.com/afrpnet/afrp-client/releases/latest/dow
 opkg install /tmp/afrp.ipk
 ```
 
-安装完刷新 LuCI（或 F5），菜单「服务 → AFRP frpc」。
+安装完刷新 LuCI（或 F5），菜单「服务 → AFRP 内网穿透」。
 
 > 若提示签名相关错误：`opkg install --force-signature /tmp/afrp.ipk`。
 > 
@@ -76,36 +75,13 @@ cd .. && make defconfig && make package/luci-app-afrp/compile V=s
 
 ### 快速开始（推荐）
 
-1. **安装插件**后刷新 LuCI，进入「服务 → AFRP frpc → 运行状态」
-2. 点击「官网导入」，输入 afrp.net 账号密码，点击导入
-   - 自动获取服务器信息、OIDC 配置、客户端密钥
-   - 无需手动填写任何参数
-3. 切换到「隧道管理」添加隧道（类型、本地端口、子域名等），保存并应用
-4. 回到「基础设置」勾选「启用」，或直接在「运行状态」页点「启动服务」
-
-### 手动配置（不推荐）
-
-如果无法使用官网导入，可手动填写：
-
-1. 「基础设置」页填入服务器地址/端口（默认 7000）
-2. 到官网「用户中心 → APP / 客户端」取得 `client_id` 与 `client_secret` 填入
-3. 「隧道管理」页添加隧道，保存并应用
-4. 勾选「启用」或点「启动服务」
-
-> 配置保存在 `/etc/config/afrp`（UCI），运行配置由 `render` 自动生成到 `/var/etc/afrp.toml`
-> （每次启动/重载自动重写，不要手工编辑 toml 文件）。
-
-### 官网导入工作原理
-
-「运行状态 → 官网导入」：填官网地址（默认 https://www.afrp.net）、账号、密码，
-可选勾选「顺带重置客户端密钥」，点击导入后插件会：
-
-1. 调官网 `/api/config.php` 拉取 OIDC 参数（issuer/audience/scope/token 地址）；
-2. 用账号密码调 `/api/login.php` 换临时令牌；
-3. 拉取 `/api/servers.php` 服务器列表，直接「设为当前服务器」；
-4. 若勾选重置，则调用 `/api/secret.php` 生成新的 client_id / client_secret 并写入本机。
-
-> 密码与令牌仅写入 /tmp 临时文件，调用完立即删除，不落盘。
+1. **安装插件**后刷新 LuCI，进入「服务 → AFRP 内网穿透 → 基础设置」
+2. 输入 afrp.net 账号、密码，点击登录
+   - 自动获取服务器信息、OIDC 配置
+3. 选择服务器
+4. 填写客户端密钥（client_secret）或重置并获取，注意：重置后旧值立即失效，请妥善保存
+5. 切换到「隧道管理」添加隧道（类型、本地端口、子域名等），保存并应用
+6. 回到「基础设置」勾选「启用」，或直接在「运行状态」页点「启动服务」
 
 ### frpc 核心更新
 
