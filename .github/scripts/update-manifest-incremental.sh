@@ -62,7 +62,7 @@ case "$FILENAME" in
       exit 0
     fi
     ;;
-  luci-app-afrp_*)
+  luci-app-afrp_*|luci-app-afrp-*)
     KIND="app"
     PLATFORM="openwrt"
     if [[ "$FILENAME" == *.ipk ]]; then

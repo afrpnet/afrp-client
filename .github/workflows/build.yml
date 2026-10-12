@@ -512,7 +512,7 @@ jobs:
             # 判断子目录
             case "$filename" in
               afrp-oidc-client_*) subdir="app" ;;
-              luci-app-afrp_*) subdir="app" ;;
+              luci-app-afrp_*|luci-app-afrp-*) subdir="app" ;;
               frpc_*) subdir="frpc" ;;
               *) continue ;;
             esac
