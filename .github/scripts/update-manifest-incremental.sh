@@ -19,6 +19,15 @@ FILENAME=$(basename "$FILE")
 VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
 DATE=$(date +%Y-%m-%d)
 
+# 检查文件版本是否与当前版本匹配（跳过旧版本文件）
+if [[ "$FILENAME" =~ _([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+  FILE_VER="${BASH_REMATCH[1]}"
+  if [ "$FILE_VER" != "$VER" ]; then
+    echo "⏭️ 跳过旧版本文件：$FILENAME（当前版本：$VER）"
+    exit 0
+  fi
+fi
+
 # 判断文件类型
 case "$FILENAME" in
   afrp-oidc-client_*)
