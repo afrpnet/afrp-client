@@ -181,21 +181,11 @@ $manifest['items'] = $items;
 $manifest['updated'] = date('Y-m-d H:i:s');
 $manifest['count'] = count($items);
 
-// 保存临时 manifest
-file_put_contents($manifest_tmp, json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n");
+// 保存为固定路径供 CI 上传
+file_put_contents('/tmp/manifest-updated.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n");
 echo "✅ Manifest 已更新（共 {$manifest['count']} 个条目）\n";
 PHP_SCRIPT
 
-# 上传更新后的 manifest 到网站（通过 API 或 SCP）
-# 这里需要根据你的实际部署方式调整
-echo "📤 上传 manifest 到网站..."
-# 示例：通过 curl 调用网站 API
-# curl -sS -X POST "${SITE_URL}/api/ci/update-manifest" \
-#   -H "Authorization: Bearer ${CI_API_SECRET}" \
-#   -F "manifest=@${MANIFEST_TMP}"
-
-# 或者通过 SCP 直接上传
-# scp "$MANIFEST_TMP" user@server:/path/to/web/download/manifest.json
-
+# 不需要上传 manifest（由后续步骤统一推送）
 rm -f "$MANIFEST_TMP"
 echo "✅ 完成：$FILENAME"
