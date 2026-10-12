@@ -364,7 +364,7 @@ jobs:
   upload-and-update-manifest:
     needs: [build-windows, build-macos-arm64, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
     runs-on: ubuntu-latest
-    if: always() && github.event_name != 'pull_request'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v4
 
