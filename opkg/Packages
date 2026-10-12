@@ -6,7 +6,7 @@ Section: luci
 Architecture: all
 Installed-Size: 59
 Filename: luci-app-afrp_1.1.5_all.ipk
-Size: 18266
-SHA256sum: c5e59d4b34c8b6e6c594218c5b5fb5ea84c124db5ef83615364321e2fcfc75c1
+Size: 18271
+SHA256sum: 769692fc9e5e0f5084718fa77851b493535d56f6ffb3f182dc69a573dc751806
 Description: AFRP frpc tunnel management by afrp.net
 
