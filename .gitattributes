@@ -1,0 +1,3 @@
+# opkg Packages 索引必须使用 Unix 换行符 (LF)
+/opkg/Packages text eol=lf
+/opkg/Packages.gz binary

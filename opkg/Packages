@@ -11,3 +11,4 @@ SHA256sum: 6a1540b786eacd67987ad97e85f0b9cd7e4e65ef76881d6ae2721943d26e159b
 Description: AFRP NAT traversal support and management by afrp.net.
  Manage frpc tunnels with OIDC authentication, auto-update
  frpc core, and monitor connection status from LuCI.
+

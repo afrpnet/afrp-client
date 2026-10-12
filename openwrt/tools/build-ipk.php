@@ -328,7 +328,7 @@ function build(): array
         . "Size: {$ipkSize}\n"
         . "SHA256sum: {$ipkSha}\n"
         . "Description: {$desc}\n"
-        . "{$descCont}\n";
+        . "{$descCont}\n\n";
     $pkgPath = $DIST . '/Packages';
     if (@file_put_contents($pkgPath, $pkgIndex) === false) { die_msg('写入失败: ' . $pkgPath); }
     $pkgGzPath = $DIST . '/Packages.gz';
@@ -585,7 +585,7 @@ function publish(string $webRoot, string $siteUrl, string $date, ?string $notes,
         . "Size: {$ipkSize}\n"
         . "SHA256sum: {$ipkSha}\n"
         . "Description: {$desc}\n"
-        . "{$descCont}\n";
+        . "{$descCont}\n\n";
 
     $pkgPath = $opkgDir . '/Packages';
     $tmp = $pkgPath . '.tmp';
