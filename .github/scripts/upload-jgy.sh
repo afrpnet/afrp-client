@@ -26,9 +26,9 @@ curl -s --user "${JGY_USERNAME}:${JGY_PASSWORD}" \
 
 URL="https://dav.jianguoyun.com/dav/Afrp-Oidc-Client/${FILENAME}"
 
-echo "上传 $FILENAME 到坚果云..."
+echo "上传 $FILENAME 到坚果云（备份）..."
 curl -f --user "${JGY_USERNAME}:${JGY_PASSWORD}" \
   -T "$FILE" \
   "$URL"
 
-echo "✅ 上传成功"
+echo "✅ 上传成功（备份存储，不用于分享）"

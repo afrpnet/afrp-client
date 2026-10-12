@@ -394,8 +394,24 @@ jobs:
         run: |
           chmod +x .github/scripts/upload-123.sh
           for f in dist/*; do
-            [ -f "$f" ] && bash .github/scripts/upload-123.sh "$f" "/Afrp-Oidc-Client" || true
+            [ -f "$f" ] && bash .github/scripts/upload-123.sh "$f" || true
           done
         env:
           PAN123_USERNAME: ${{ secrets.PAN123_USERNAME }}
           PAN123_PASSWORD: ${{ secrets.PAN123_PASSWORD }}
+
+      - name: 输出下载链接
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "📥 123 云盘下载链接（主要分发渠道）"
+          echo "=========================================="
+          for f in dist/*; do
+            [ -f "$f" ] && echo "  https://www.123pan.com/s/$(basename $f)"
+          done
+          echo ""
+          echo "=========================================="
+          echo "💾 坚果云（备份存储）"
+          echo "=========================================="
+          echo "  目录：/Afrp-Oidc-Client/"
+          echo ""

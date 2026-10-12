@@ -25,3 +25,4 @@ curl -f --user "${PAN123_USERNAME}:${PAN123_PASSWORD}" \
   "$URL"
 
 echo "✅ 上传成功"
+echo "📥 下载链接：https://www.123pan.com/s/${FILENAME}"
