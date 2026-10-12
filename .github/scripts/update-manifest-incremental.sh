@@ -57,14 +57,22 @@ case "$FILENAME" in
     elif [[ "$FILENAME" == *ohos*.hap ]]; then
       PLATFORM="ohos"; CHANNEL="hap"; ARCH="arm64"
       NOTES="HarmonyOS 侧载安装"
-    elif [[ "$FILENAME" == *luci-app-afrp*.ipk ]]; then
-      PLATFORM="openwrt"; CHANNEL="ipk"; ARCH="all"
-      NOTES="OpenWrt LuCI 插件（opkg 安装）"
-    elif [[ "$FILENAME" == *luci-app-afrp*.tar.gz ]]; then
-      PLATFORM="openwrt"; CHANNEL="tar.gz"; ARCH="all"
-      NOTES="OpenWrt LuCI 插件包（手动安装）"
     else
       echo "⚠️ 未知 App 文件格式：$FILENAME"
+      exit 0
+    fi
+    ;;
+  luci-app-afrp_*)
+    KIND="app"
+    PLATFORM="openwrt"
+    if [[ "$FILENAME" == *.ipk ]]; then
+      CHANNEL="ipk"; ARCH="all"
+      NOTES="OpenWrt LuCI 插件（opkg 安装）"
+    elif [[ "$FILENAME" == *.tar.gz ]]; then
+      CHANNEL="tar.gz"; ARCH="all"
+      NOTES="OpenWrt LuCI 插件包（手动安装）"
+    else
+      echo "⚠️ 未知 OpenWrt 文件格式：$FILENAME"
       exit 0
     fi
     ;;
