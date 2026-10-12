@@ -609,29 +609,34 @@ class FrpcUpdateCheck {
 /// 查询 frpc 更新；优先从 GitHub Release 获取，失败回退到网站清单
 Future<FrpcUpdateCheck?> checkFrpcUpdate(String baseUrl, {http.Client? client}) async {
   final platform = currentUpdatePlatform();
-  if (platform == 'android') {
-    return null;
-  }
   final arch = currentUpdateArch();
+
+  // Android/Ohos 使用 Linux ARM64 的 frpc
+  String frpcPlatform = platform;
+  String frpcArch = arch;
+  if (platform == 'android' || platform == 'ohos') {
+    frpcPlatform = 'linux';
+    frpcArch = 'arm64'; // 大多数设备是 ARM64
+  }
 
   // 先试 GitHub
   try {
     final release = await fetchGitHubRelease('fatedier/frp', client: client);
-    final match = _matchFrpcAsset(release, platform, arch);
+    final match = _matchFrpcAsset(release, frpcPlatform, frpcArch);
     if (match != null) {
       final [assetName, url] = match;
       final entry = UpdateEntry(
-        id: 'gh-frpc-$platform-$arch',
+        id: 'gh-frpc-$frpcPlatform-$frpcArch',
         kind: 'frpc',
-        platform: platform,
+        platform: frpcPlatform,
         channel: '',
-        arch: arch,
+        arch: frpcArch,
         version: release.version,
         file: assetName,
         url: url,
         sha256: '', // GitHub Atom 无 SHA-256，跳过校验
         date: '',
-        notes: 'frpc 官方 ${release.version}（$platform/$arch）',
+        notes: 'frpc 官方 ${release.version}（$frpcPlatform/$frpcArch）',
         size: 0,
         latest: true,
       );
@@ -644,7 +649,7 @@ Future<FrpcUpdateCheck?> checkFrpcUpdate(String baseUrl, {http.Client? client}) 
 
   // 回退：网站 manifest
   final manifest = await fetchUpdateManifest(baseUrl, client: client);
-  final entry = chooseEntry(manifest, kind: 'frpc', platform: platform, arch: arch);
+  final entry = chooseEntry(manifest, kind: 'frpc', platform: frpcPlatform, arch: frpcArch);
   if (entry == null) {
     return null;
   }
