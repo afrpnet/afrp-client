@@ -57,35 +57,35 @@ case "$FILENAME" in
     elif [[ "$FILENAME" == *ohos*.hap ]]; then
       PLATFORM="ohos"; CHANNEL="hap"; ARCH="arm64"
       NOTES="HarmonyOS 侧载安装"
+    elif [[ "$FILENAME" == *luci-app-afrp*.ipk ]]; then
+      PLATFORM="openwrt"; CHANNEL="ipk"; ARCH="all"
+      NOTES="OpenWrt LuCI 插件（opkg 安装）"
+    elif [[ "$FILENAME" == *luci-app-afrp*.tar.gz ]]; then
+      PLATFORM="openwrt"; CHANNEL="tar.gz"; ARCH="all"
+      NOTES="OpenWrt LuCI 插件包（手动安装）"
     else
       echo "⚠️ 未知 App 文件格式：$FILENAME"
       exit 0
     fi
     ;;
-  frp_*|luci-app-afrp_*)
+  frp_*)
     KIND="frpc"
-    PLATFORM="openwrt"
-    if [[ "$FILENAME" == *.ipk ]]; then
-      CHANNEL="ipk"; ARCH="all"
-      NOTES="LuCI 插件（opkg 安装）"
-    elif [[ "$FILENAME" == *.tar.gz ]]; then
-      CHANNEL="tar.gz"; ARCH="all"
-      NOTES="LuCI 插件包（手动安装）"
+    PLATFORM="linux"
+    CHANNEL=""
+    if [[ "$FILENAME" == *_amd64.* ]]; then
+      ARCH="amd64"
+    elif [[ "$FILENAME" == *_arm64.* ]]; then
+      ARCH="arm64"
+    elif [[ "$FILENAME" == *_arm.* ]]; then
+      ARCH="arm"
+    elif [[ "$FILENAME" == *_mipsle.* ]]; then
+      ARCH="mipsle"
+    elif [[ "$FILENAME" == *_mips.* ]]; then
+      ARCH="mips"
     else
-      # frp 官方格式
-      PLATFORM="linux"
-      CHANNEL=""
-      if [[ "$FILENAME" == *_amd64.* ]]; then
-        ARCH="amd64"
-      elif [[ "$FILENAME" == *_arm64.* ]]; then
-        ARCH="arm64"
-      elif [[ "$FILENAME" == *_arm.* ]]; then
-        ARCH="arm"
-      else
-        ARCH="unknown"
-      fi
-      NOTES="frpc ${VER} (Linux ${ARCH})"
+      ARCH="unknown"
     fi
+    NOTES="frpc ${VER} (Linux ${ARCH})"
     ;;
   *)
     echo "⚠️ 未知文件类型：$FILENAME"
