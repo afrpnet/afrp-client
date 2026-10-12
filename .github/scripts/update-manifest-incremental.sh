@@ -111,6 +111,7 @@ if ! curl -sS -o "$MANIFEST_TMP" "$MANIFEST_URL" 2>/dev/null; then
 fi
 
 # 使用 PHP 更新 manifest（更安全）
+export MANIFEST_TMP
 php <<'PHP_SCRIPT'
 <?php
 $file = getenv('FILE');
