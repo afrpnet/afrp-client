@@ -40,6 +40,7 @@ class UpdateEntry {
   final String notes;
   final int size;
   final bool latest;
+  final List<Map<String, dynamic>> mirrors;
 
   const UpdateEntry({
     required this.id,
@@ -55,10 +56,20 @@ class UpdateEntry {
     required this.notes,
     required this.size,
     required this.latest,
+    this.mirrors = const [],
   });
 
   factory UpdateEntry.fromJson(Map<String, dynamic> json) {
     String s(String k) => '${json[k] ?? ''}';
+    final rawMirrors = json['mirrors'];
+    final mirrors = <Map<String, dynamic>>[];
+    if (rawMirrors is List) {
+      for (final m in rawMirrors) {
+        if (m is Map<String, dynamic>) {
+          mirrors.add(m);
+        }
+      }
+    }
     return UpdateEntry(
       id: s('id'),
       kind: s('kind'),
@@ -73,6 +84,7 @@ class UpdateEntry {
       notes: s('notes'),
       size: json['size'] is num ? (json['size'] as num).toInt() : 0,
       latest: json['latest'] == true,
+      mirrors: mirrors,
     );
   }
 
@@ -461,11 +473,11 @@ Future<File> downloadUpdateFile(
   final urls = <String>[];
   
   // 1. 添加 R2 站内镜像（如果 mirrors 中有）
-  final r2Mirror = (entry as dynamic).mirrors?.firstWhere(
+  final r2Mirror = entry.mirrors.firstWhere(
     (m) => m['name'] == '站内镜像',
-    orElse: () => null,
+    orElse: () => <String, dynamic>{},
   );
-  if (r2Mirror != null && r2Mirror['url'] != null) {
+  if (r2Mirror.isNotEmpty && r2Mirror['url'] != null) {
     urls.add(r2Mirror['url'] as String);
   } else {
     // 如果没有 mirror，根据文件类型构造 R2 URL
