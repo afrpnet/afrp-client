@@ -71,6 +71,7 @@ tar -xzf /tmp/afrp.tar.gz -C /tmp
 cd /tmp/luci-app-afrp-1.1.0 && ./install.sh
 ```
 卸载：同一目录 `./install.sh uninstall`（加 `--purge` 连配置一起删）。
+
 **手动安装**：下载 `luci-app-afrp-<版本>.tar.gz`，解压到 `/usr/lib/lua/luci/`。
 
 安装后在 LuCI 界面「服务 → AFRP 内网穿透」中配置。
