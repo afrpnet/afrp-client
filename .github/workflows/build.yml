@@ -236,6 +236,26 @@ jobs:
           done
           sed -i -E 's@^([[:space:]]*-[[:space:]]+assets/frpc/(windows|linux|macos)/.*)$@#\1@' pubspec.yaml
 
+      - name: Bundle frpc as native libs (jniLibs)
+        run: |
+          set -e
+          FRPC_VER=0.71.0
+          declare -A ABI=( [arm64-v8a]=arm64 [armeabi-v7a]=arm [x86_64]=amd64 )
+          for abi in "${!ABI[@]}"; do
+            arch="${ABI[$abi]}"
+            mkdir -p "android/app/src/main/jniLibs/$abi"
+            url="https://github.com/fatedier/frp/releases/download/v${FRPC_VER}/frp_${FRPC_VER}_linux_${arch}.tar.gz"
+            echo "下载 $url"
+            curl -fsSL "$url" -o /tmp/frp.tgz
+            rm -rf /tmp/frpx && mkdir -p /tmp/frpx
+            tar -xzf /tmp/frp.tgz -C /tmp/frpx
+            src=$(find /tmp/frpx -type f -name frpc | head -1)
+            [ -n "$src" ] || { echo "❌ 未找到 frpc ($arch)"; exit 1; }
+            cp "$src" "android/app/src/main/jniLibs/$abi/libfrpc.so"
+            chmod 755 "android/app/src/main/jniLibs/$abi/libfrpc.so"
+            echo "✅ $abi <- frpc linux/$arch ($(stat -c%s "android/app/src/main/jniLibs/$abi/libfrpc.so") bytes)"
+          done
+
       - name: Build Android APK
         run: flutter build apk --release
 

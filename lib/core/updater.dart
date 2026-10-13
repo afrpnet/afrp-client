@@ -620,6 +620,12 @@ class FrpcUpdateCheck {
 
 /// 查询 frpc 更新；优先从 GitHub Release 获取，失败回退到网站清单
 Future<FrpcUpdateCheck?> checkFrpcUpdate(String baseUrl, {http.Client? client}) async {
+  // Android：frpc 作为 native lib 随 APK 打包，运行于只读的 nativeLibraryDir，
+  // 受 W^X 限制无法在线替换，版本随 App 升级而更新。
+  if (Platform.isAndroid) {
+    return null;
+  }
+
   final platform = currentUpdatePlatform();
   final arch = currentUpdateArch();
 

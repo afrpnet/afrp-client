@@ -15,6 +15,7 @@ import '../core/updater.dart';
 class FrpcManager extends ChangeNotifier {
   static const String frpcVersion = '0.71.0';
   static const int _maxLogLines = 800;
+  static const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
   Process? _proc;
   String? _binPath;
@@ -81,6 +82,16 @@ class FrpcManager extends ChangeNotifier {
     final bin = File('${dir.path}${Platform.pathSeparator}$exeName');
     final marker = File('${dir.path}${Platform.pathSeparator}.version');
 
+    // Android：frpc 作为 native lib（libfrpc.so）随 APK 打包，从只读且可执行的
+    // nativeLibraryDir 运行，绕过 Android 10+ 禁止从应用可写目录 exec 的限制（W^X）。
+    // 必须放在版本标记检查之前——filesDir 里的 frpc 在 Android 上无法执行。
+    if (Platform.isAndroid) {
+      final path = await _androidBundledFrpc();
+      _binPath = path;
+      _installedVersion = frpcVersion;
+      return path;
+    }
+
     // 二进制与版本标记同时存在即信任；可能已被「frpc 核心更新」替换过，勿用内置版覆盖
     if (bin.existsSync() && marker.existsSync()) {
       _installedVersion = marker.readAsStringSync().trim();
@@ -116,6 +127,20 @@ class FrpcManager extends ChangeNotifier {
     _binPath = bin.path;
     notifyListeners();
     return bin.path;
+  }
+
+  /// Android：返回 APK 内置 frpc（nativeLibraryDir/libfrpc.so）的可执行路径。
+  /// 该目录由系统在安装时解压，只读且带执行权限，可直接 exec。
+  Future<String> _androidBundledFrpc() async {
+    final dir = await _installerChannel.invokeMethod<String>('nativeLibraryDir');
+    if (dir == null || dir.isEmpty) {
+      throw StateError('无法获取 nativeLibraryDir');
+    }
+    final f = File('$dir${Platform.pathSeparator}libfrpc.so');
+    if (!f.existsSync()) {
+      throw StateError('APK 未内置 frpc（${f.path}），请重新安装最新版 App');
+    }
+    return f.path;
   }
 
   /// Android / OHOS 平台：从 manifest 下载 frpc 二进制
@@ -197,6 +222,9 @@ class FrpcManager extends ChangeNotifier {
 
   /// 用新下载并校验过的二进制替换当前 frpc（先停止进程），并更新版本标记
   Future<void> applyUpdate(File newBinary, String version) async {
+    if (Platform.isAndroid) {
+      throw StateError('Android 上 frpc 随 App 打包（nativeLibraryDir），不支持单独更新；请升级 App 版本');
+    }
     await stop();
     final (_, exeName) = _platformAsset;
     final dir = await _workDir();

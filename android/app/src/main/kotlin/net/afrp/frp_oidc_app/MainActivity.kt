@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "installApk" -> installApk(call.argument<String>("path"), result)
+                    "nativeLibraryDir" -> result.success(applicationInfo.nativeLibraryDir)
                     else -> result.notImplemented()
                 }
             }

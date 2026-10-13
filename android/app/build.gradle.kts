@@ -36,6 +36,16 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packaging {
+        jniLibs {
+            // frpc 以 libfrpc.so 形式打包；useLegacyPackaging=true 让系统安装时把 .so
+            // 解压到 nativeLibraryDir（可执行路径），绕过 Android 10+ 对应用可写目录的 exec 限制（W^X）
+            useLegacyPackaging = true
+            // frpc 是 Go 编译的 ELF 可执行文件，禁止 AGP 对其 strip（会损坏二进制）
+            keepDebugSymbols += "**/libfrpc.so"
+        }
+    }
 }
 
 kotlin {
