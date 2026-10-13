@@ -330,13 +330,50 @@ function build(): array
     $pkgGzPath = $DIST . '/Packages.gz';
     @file_put_contents($pkgGzPath, gzencode($pkgIndex, 9));
 
+    // ---- .apk 格式（OpenWrt 25.12+ APK 包管理器）
+    // APK 格式：concatenated tar.gz，包含 .PKGINFO + 控制脚本 + 数据文件
+    $pkginfo = "pkgname = luci-app-afrp\n"
+        . "pkgver = {$ver}\n"
+        . "pkgdesc = AFRP NAT traversal support and management by afrp.net\n"
+        . "url = https://www.afrp.net\n"
+        . "arch = noarch\n"
+        . "builddate = {$mtime}\n"
+        . "packager = AFRP <https://www.afrp.net>\n"
+        . "size = {$payloadBytes}\n"
+        . "depend = luci-base\n"
+        . "depend = uclient-fetch\n"
+        . "depend = ca-bundle\n"
+        . "depend = frpc\n"
+        . "license = MIT\n";
+
+    $postInstall = "#!/bin/sh\n"
+        . "chmod 600 /etc/afrp/config.json 2>/dev/null\n"
+        . "rm -rf /tmp/luci-indexcache /tmp/luci-modulecache\n"
+        . "[ -x /etc/init.d/afrp ] && /etc/init.d/afrp enable\n"
+        . "/etc/init.d/rpcd restart >/dev/null 2>&1\n"
+        . "[ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd reload >/dev/null 2>&1\n";
+
+    // APK 控制部分：.PKGINFO + .post-install
+    $apkCtl = '';
+    tar_append($apkCtl, $mtime, '.PKGINFO', 0644, $pkginfo);
+    tar_append($apkCtl, $mtime, '.post-install', 0755, $postInstall);
+    $apkCtlGz = gzencode(tar_finish($apkCtl), 9);
+    if ($apkCtlGz === false) { die_msg('APK control.tar.gz 压缩失败'); }
+
+    // APK 数据部分：与 IPK 共用 data.tar.gz
+    // APK 格式是 concatenated tar.gz：control + data
+    $apkName = "luci-app-afrp-{$ver}-r{$rel}.apk";
+    $apkPath = $DIST . '/' . $apkName;
+    $apkContent = $apkCtlGz . $datGz;
+    if (@file_put_contents($apkPath, $apkContent) === false) { die_msg('写入失败: ' . $apkPath); }
+
     out("打包完成（v{$ver}，共 " . count($files) . " 个文件，{$installedKb} KB）：");
-    foreach ([[$ipkPath, $ipkName], [$tgzPath, $tgzName], [$pkgPath, 'Packages'], [$pkgGzPath, 'Packages.gz']] as $e) {
+    foreach ([[$ipkPath, $ipkName], [$apkPath, $apkName], [$tgzPath, $tgzName], [$pkgPath, 'Packages'], [$pkgGzPath, 'Packages.gz']] as $e) {
         [$p, $n] = $e;
         out(sprintf('  %s  %d 字节  sha256=%s', $n, (int)filesize($p), (string)hash_file('sha256', $p)));
     }
 
-    return ['ver' => $ver, 'rel' => $rel, 'files' => $files, 'ipk' => $ipkPath, 'tgz' => $tgzPath];
+    return ['ver' => $ver, 'rel' => $rel, 'files' => $files, 'ipk' => $ipkPath, 'apk' => $apkPath, 'tgz' => $tgzPath];
 }
 
 // ---------------------------------------------------------------- 自检
@@ -401,6 +438,72 @@ function verify(array $b): bool
         out('[ipk] control 字段 + conffiles + postinst(0755)  ✓');
         out('[ipk] data: ' . count($b['files']) . ' 个文件 + ' . $dirCount . ' 个目录，权限校验 ' . ($errs ? '✗' : '✓'));
     }
+
+    // ---- .apk（OpenWrt 25.12+ APK 格式）
+    $apkErr = [];
+    if (isset($b['apk']) && is_file($b['apk'])) {
+        $apkRaw = (string)@file_get_contents($b['apk']);
+        // APK 是 concatenated tar.gz：先解压控制部分，再解压数据部分
+        $apkParts = [];
+        $offset = 0;
+        $apkLen = strlen($apkRaw);
+        $partIndex = 0;
+        while ($offset < $apkLen) {
+            // 尝试解压当前偏移的 gzip 数据
+            $gzData = substr($apkRaw, $offset);
+            $decompressed = @gzdecode($gzData);
+            if ($decompressed === false) {
+                $apkErr[] = "APK 第 " . ($partIndex + 1) . " 段 gzip 解压失败";
+                break;
+            }
+            // 找到这个 gzip 流的实际长度（通过尝试不同长度）
+            $gzLen = strlen($gzData);
+            for ($tryLen = strlen($decompressed) + 100; $tryLen <= $gzLen; $tryLen++) {
+                $test = @gzdecode(substr($gzData, 0, $tryLen));
+                if ($test !== false && strlen($test) === strlen($decompressed)) {
+                    $gzLen = $tryLen;
+                    break;
+                }
+            }
+            $entries = tar_parse($decompressed);
+            foreach ($entries as $name => $info) {
+                $apkParts[$name] = $info;
+            }
+            $offset += $gzLen;
+            $partIndex++;
+        }
+
+        if (!$apkErr) {
+            // 验证 .PKGINFO
+            if (!isset($apkParts['.PKGINFO'])) {
+                $apkErr[] = 'APK 缺少 .PKGINFO';
+            } else {
+                $pkginfo = $apkParts['.PKGINFO']['data'];
+                foreach (['pkgname = luci-app-afrp', "pkgver = {$b['ver']}", 'arch = noarch', 'depend = frpc'] as $need) {
+                    if (strpos($pkginfo, $need) === false) { $apkErr[] = '.PKGINFO 缺少: ' . $need; }
+                }
+            }
+            // 验证 .post-install
+            if (!isset($apkParts['.post-install'])) {
+                $apkErr[] = 'APK 缺少 .post-install';
+            } elseif (($apkParts['.post-install']['mode'] ?? 0) !== 0755) {
+                $apkErr[] = '.post-install 权限应为 0755';
+            }
+            // 验证数据文件
+            foreach ($b['files'] as $dst => $info) {
+                $key = './' . $dst;
+                if (!isset($apkParts[$key])) { $apkErr[] = "APK data 缺少文件: {$dst}"; continue; }
+                if ($apkParts[$key]['size'] !== (int)@filesize($info['src'])) { $apkErr[] = "APK {$dst} 大小不一致"; }
+            }
+            if (!$apkErr) {
+                out('[apk] .PKGINFO + .post-install + data 完整  ✓');
+            }
+        }
+    } else {
+        $apkErr[] = 'APK 文件不存在';
+    }
+
+    $errs = array_merge($errs, $apkErr);
 
     // ---- tar.gz
     $tgzErr = [];
@@ -497,16 +600,19 @@ function publish(string $webRoot, string $siteUrl, string $date, ?string $notes,
         }
     }
 
-    $pairs = [['ipk', $b['ipk']], ['portable', $b['tgz']]];
+    $pairs = [['ipk', $b['ipk']], ['apk', $b['apk'] ?? ''], ['portable', $b['tgz']]];
     foreach ($pairs as $pair) {
         [$channel, $srcPath] = $pair;
+        if ($srcPath === '' || !is_file($srcPath)) { continue; }
         $file = basename($srcPath);
         $dst = $filesDir . '/' . $file;
         if (!@copy($srcPath, $dst)) { die_msg('拷贝失败: ' . $dst); }
 
         $notesText = $notes !== null && $notes !== ''
             ? $notes
-            : ($channel === 'ipk' ? 'LuCI 网页插件（opkg install 安装）' : '通用压缩包（解压后运行 install.sh）');
+            : ($channel === 'ipk' ? 'LuCI 网页插件（opkg install 安装，OpenWrt 24.10 及以下）'
+                : ($channel === 'apk' ? 'LuCI 网页插件（apk add 安装，OpenWrt 25.12 及以上）'
+                : '通用压缩包（解压后运行 install.sh）'));
 
         $item = [
             'id'       => substr(md5('luci-app-afrp|' . $channel), 0, 12),
