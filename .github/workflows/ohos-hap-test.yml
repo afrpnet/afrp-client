@@ -104,17 +104,23 @@ jobs:
       - name: Write ohos/local.properties
         run: |
           NODE_DIR="$NODE18_HOME"
+          # hvigor 期望布局 <sdk.dir>/<apiVersion>/{ets,js,native,previewer,toolchains}（与本地
+          # D:\dev\harmony-sdk\26\... 一致）。setup-ohos 的组件在 .../default/openharmony/ 下、
+          # 没有 API 版本层，故建扁平目录把 26 软链过去，sdk.dir 指向该扁平目录。
+          FLAT_SDK="$HOME/ohos-sdk-flat"
+          mkdir -p "$FLAT_SDK"
+          ln -sfn "$OHOS_NDK_HOME" "$FLAT_SDK/26"
+          ls -la "$FLAT_SDK"
+          ls "$FLAT_SDK/26" | head
           {
-            # sdk.dir 必须指向直接包含 openharmony/ 与 hms/ 的那一层（.../sdk/default）。
-            # 指到 .../sdk（多一层）或 .../sdk/default/openharmony（少一层）都会让 hvigor
-            # 报 "Unable to find the following components: toolchains:26 ..."
-            echo "sdk.dir=$HOS_SDK_HOME/default"
-            echo "hwsdk.dir=$HOS_SDK_HOME/default"
+            echo "sdk.dir=$FLAT_SDK"
+            echo "hwsdk.dir=$FLAT_SDK"
             echo "nodejs.dir=$NODE_DIR"
             echo "flutter.sdk=$HOME/flutter-ohos"
           } > ohos/local.properties
           echo "=== local.properties ==="
           cat ohos/local.properties
+          echo "FLAT_SDK=$FLAT_SDK" >> "$GITHUB_ENV"
 
       - name: Configure npm registry (~/.npmrc)
         run: |
@@ -131,8 +137,8 @@ jobs:
         run: |
           set -e
           export PATH="$HOME/flutter-ohos/bin:$PATH"
-          export DEVECO_SDK_HOME="$HOS_SDK_HOME"
-          export OHOS_BASE_SDK_HOME="$HOS_SDK_HOME"
+          export DEVECO_SDK_HOME="$FLAT_SDK"
+          export OHOS_BASE_SDK_HOME="$FLAT_SDK"
           # 强制 hvigor 用 Node 18（绕开 command-line-tools 自带 Node>=20.11 触发的 pnpm ERR_INVALID_THIS）
           export NODE_HOME="$NODE18_HOME"
           export PATH="$NODE_HOME/bin:$PATH"
