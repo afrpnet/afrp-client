@@ -324,11 +324,25 @@ jobs:
           php-version: '8.2'
           extensions: zlib
       - name: Build ipk + apk
+        id: build
+        continue-on-error: true
         run: |
           cd openwrt
           set -x
-          php tools/build-ipk.php --verify 2>&1 || { echo "❌ build-ipk.php 失败"; exit 1; }
-          set +x
+          php tools/build-ipk.php --verify 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-build-log
+          path: openwrt/build.log
+      - name: Check build result
+        if: steps.build.outcome == 'failure'
+        run: |
+          echo "❌ build-ipk.php 失败"
+          cat openwrt/build.log
+          exit 1
           mkdir -p ../dist ../opkg
           cp dist/*.ipk ../dist/
           cp dist/*.apk ../dist/
