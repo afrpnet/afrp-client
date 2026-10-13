@@ -43,6 +43,18 @@ jobs:
         with:
           node-version: '18'
 
+      # hvigorw 优先用 NODE_HOME/bin/node。HarmonyOS command-line-tools 自带 Node >=20.11，
+      # 会触发 hvigor 内置 pnpm 8.x 的 ERR_INVALID_THIS(URLSearchParams) bug（@ohos 包只在
+      # repo.harmonyos.com，无法换源）。这里先在 setup-ohos 污染 PATH 之前记住 Node 18 目录，
+      # Build 步骤再显式把 NODE_HOME/PATH 指回 Node 18，让 hvigor 用 18 跑绕开该 bug。
+      - name: Capture Node 18 home
+        run: |
+          NODE18_BIN=$(readlink -f "$(which node)")
+          NODE18_HOME=$(dirname "$(dirname "$NODE18_BIN")")
+          echo "NODE18_HOME=$NODE18_HOME" >> "$GITHUB_ENV"
+          echo "=== node18 home=$NODE18_HOME ==="
+          "$NODE18_HOME/bin/node" -v
+
       - name: Setup HarmonyOS CLI tools + SDK (API 26)
         uses: ErBWs/setup-ohos@v2
         with:
@@ -87,8 +99,7 @@ jobs:
 
       - name: Write ohos/local.properties
         run: |
-          NODE_BIN=$(readlink -f "$(which node)")
-          NODE_DIR=$(dirname "$(dirname "$NODE_BIN")")
+          NODE_DIR="$NODE18_HOME"
           {
             echo "sdk.dir=$HOS_SDK_HOME"
             echo "hwsdk.dir=$HOS_SDK_HOME"
@@ -115,6 +126,11 @@ jobs:
           export PATH="$HOME/flutter-ohos/bin:$PATH"
           export DEVECO_SDK_HOME="$HOS_SDK_HOME"
           export OHOS_BASE_SDK_HOME="$HOS_SDK_HOME"
+          # 强制 hvigor 用 Node 18（绕开 command-line-tools 自带 Node>=20.11 触发的 pnpm ERR_INVALID_THIS）
+          export NODE_HOME="$NODE18_HOME"
+          export PATH="$NODE_HOME/bin:$PATH"
+          echo "=== node used by hvigor: NODE_HOME=$NODE_HOME ==="
+          node -v
           echo "=== flutter doctor -v ==="
           flutter doctor -v || true
           echo "=== flutter pub get ==="
