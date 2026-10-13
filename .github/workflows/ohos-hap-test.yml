@@ -67,6 +67,10 @@ jobs:
           echo "OHOS_NDK_HOME=$OHOS_NDK_HOME"
           ls -la "$HOS_SDK_HOME" || true
           ls -la "$HOS_SDK_HOME/default" || true
+          echo "=== sdk-pkg.json ==="
+          cat "$HOS_SDK_HOME/default/sdk-pkg.json" 2>/dev/null || true
+          echo "=== openharmony SDK tree (depth 2) ==="
+          find "$OHOS_NDK_HOME" -maxdepth 2 2>/dev/null | head -60
           which hvigorw ohpm hdc node java || true
           hvigorw -v || true
           ohpm -v || true
