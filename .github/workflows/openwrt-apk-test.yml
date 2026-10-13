@@ -5,6 +5,12 @@ name: OpenWrt apk test
 # 手动在测试分支上运行，确认产物无误后再合并到 main 并正式发版。
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'test/openwrt-apk-v3'
+    paths:
+      - 'openwrt/**'
+      - '.github/workflows/openwrt-apk-test.yml'
 
 permissions:
   contents: read
