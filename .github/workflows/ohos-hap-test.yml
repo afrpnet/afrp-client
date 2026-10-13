@@ -101,7 +101,9 @@ jobs:
         run: |
           NODE_DIR="$NODE18_HOME"
           {
-            echo "sdk.dir=$HOS_SDK_HOME"
+            # sdk.dir 必须指向 default/openharmony（组件 ets/js/native/previewer/toolchains 所在层），
+            # 指到上一级会导致 hvigor 报 "Unable to find the following components: toolchains:26 ..."
+            echo "sdk.dir=$OHOS_NDK_HOME"
             echo "hwsdk.dir=$HOS_SDK_HOME"
             echo "nodejs.dir=$NODE_DIR"
             echo "flutter.sdk=$HOME/flutter-ohos"
