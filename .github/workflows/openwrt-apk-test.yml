@@ -58,6 +58,8 @@ jobs:
           docker run --rm -v "$PWD/dist:/dist" alpine:3.23 sh -c '
             set -e
             echo "apk version: $(apk --version)"
+            echo "--- packages.adb header (first 32 bytes) ---"
+            head -c 32 /dist/packages.adb | od -An -tx1 -c
             echo "--- apk info (best-effort) ---"
             apk info --description /dist/luci-app-afrp-*.apk || echo "(apk info 不支持文件参数，跳过)"
             echo "--- apk adbdump packages.adb (strict) ---"

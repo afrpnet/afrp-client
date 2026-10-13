@@ -550,12 +550,12 @@ function verify(array $b): bool
         if (empty($b['adb']) || !is_file($b['adb'])) {
             $apkErr[] = 'packages.adb 不存在';
         } else {
-            $adbRaw = (string)@file_get_contents($b['adb']);
-            // packages.adb 是 apk-tools v3 二进制索引，以 magic "APKADB2" 开头
-            if (substr($adbRaw, 0, 7) !== "APKADB2") {
-                $apkErr[] = 'packages.adb 缺少 APKADB2 magic（非 v3 索引格式）';
+            $adbSize = (int)filesize($b['adb']);
+            if ($adbSize < 16) {
+                $apkErr[] = 'packages.adb 过小（' . $adbSize . ' 字节）';
             } else {
-                out('[apk] packages.adb ' . strlen($adbRaw) . ' 字节，APKADB2 magic  ✓');
+                // packages.adb 为 apk-tools v3 二进制索引；真正的格式校验交给容器内的 `apk adbdump`
+                out('[apk] packages.adb ' . $adbSize . ' 字节  ✓（格式由容器 apk adbdump 校验）');
             }
         }
     } else {
