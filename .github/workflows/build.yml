@@ -333,7 +333,7 @@ jobs:
           cd openwrt
           set -x
           php tools/build-ipk.php --verify 2>&1 | tee build.log
-          exit ${PIPESTATUS[0]}
+          BUILD_EXIT=${PIPESTATUS[0]}
           mkdir -p ../dist ../opkg
           cp dist/*.ipk ../dist/
           cp dist/*.apk ../dist/
@@ -342,6 +342,7 @@ jobs:
           cp dist/*.ipk ../opkg/
           cp dist/Packages ../opkg/
           cp dist/Packages.gz ../opkg/
+          exit $BUILD_EXIT
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
