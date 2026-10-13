@@ -142,6 +142,11 @@ jobs:
           # 强制 hvigor 用 Node 18（绕开 command-line-tools 自带 Node>=20.11 触发的 pnpm ERR_INVALID_THIS）
           export NODE_HOME="$NODE18_HOME"
           export PATH="$NODE_HOME/bin:$PATH"
+          # hvigor 优先读 env 里的 SDK 路径（而非 local.properties），setup-ohos 设的 HOS_SDK_HOME
+          # 指向 .../command-line-tools/sdk（无 <api> 层）会导致找不到组件；统一指到 FLAT。
+          # flutter 用的是 Clone 步骤 `flutter config --ohos-sdk` 持久化的路径，不受此影响。
+          export HOS_SDK_HOME="$FLAT_SDK"
+          export OHOS_SDK_HOME="$FLAT_SDK"
           echo "=== node used by hvigor: NODE_HOME=$NODE_HOME ==="
           node -v
           echo "=== flutter doctor -v ==="
