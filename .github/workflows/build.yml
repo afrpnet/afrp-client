@@ -354,8 +354,10 @@ jobs:
           cp dist/*.ipk ../opkg/
           cp dist/Packages ../opkg/
           cp dist/Packages.gz ../opkg/
-          cp dist/*.apk ../opkg/ ../opkg/noarch/
-          cp dist/APKINDEX.tar.gz ../opkg/ ../opkg/noarch/
+          cp dist/*.apk ../opkg/
+          cp dist/*.apk ../opkg/noarch/
+          cp dist/APKINDEX.tar.gz ../opkg/
+          cp dist/APKINDEX.tar.gz ../opkg/noarch/
           exit $BUILD_EXIT
       - name: Upload build log
         if: always()
@@ -445,13 +447,15 @@ jobs:
           APK_FILE=$(ls dist/luci-app-afrp-${VER}-r*.apk 2>/dev/null | head -1 || true)
           IDX_FILE=$(ls dist/APKINDEX.tar.gz 2>/dev/null || true)
           if [ -n "$APK_FILE" ]; then
-            cp "$APK_FILE" opkg/ opkg/noarch/
+            cp "$APK_FILE" opkg/
+            cp "$APK_FILE" opkg/noarch/
             echo "✅ apk 包已复制: $(basename "$APK_FILE")"
           else
             echo "⚠️ 未找到 apk 包"
           fi
           if [ -n "$IDX_FILE" ]; then
-            cp "$IDX_FILE" opkg/ opkg/noarch/
+            cp "$IDX_FILE" opkg/
+            cp "$IDX_FILE" opkg/noarch/
             echo "✅ APKINDEX 已复制"
           else
             echo "⚠️ 未找到 APKINDEX.tar.gz"
