@@ -366,24 +366,45 @@ jobs:
           cat build.log
           mkdir -p ../dist ../opkg/noarch
           cp dist/*.ipk ../dist/
-          cp dist/*.apk ../dist/
           cp dist/luci-app-afrp-*.tar.gz ../dist/
           rm -f ../opkg/*.ipk ../opkg/Packages ../opkg/Packages.gz
-          rm -f ../opkg/*.apk ../opkg/APKINDEX.tar.gz ../opkg/noarch/*.apk ../opkg/noarch/APKINDEX.tar.gz
+          rm -f ../opkg/*.apk ../opkg/packages.adb ../opkg/APKINDEX.tar.gz
+          rm -f ../opkg/noarch/*.apk ../opkg/noarch/packages.adb ../opkg/noarch/APKINDEX.tar.gz
           cp dist/*.ipk ../opkg/
           cp dist/Packages ../opkg/
           cp dist/Packages.gz ../opkg/
-          cp dist/*.apk ../opkg/
-          cp dist/*.apk ../opkg/noarch/
-          cp dist/APKINDEX.tar.gz ../opkg/
-          cp dist/APKINDEX.tar.gz ../opkg/noarch/
+          # apk-tools v3 产物：.apk + packages.adb（docker 不可用时不会生成）
+          if [ -f dist/packages.adb ]; then
+            cp dist/*.apk ../dist/
+            cp dist/packages.adb ../dist/
+            cp dist/*.apk ../opkg/
+            cp dist/packages.adb ../opkg/
+            cp dist/*.apk ../opkg/noarch/
+            cp dist/packages.adb ../opkg/noarch/
+          else
+            echo "::warning::未生成 packages.adb（容器 apk 打包被跳过）"
+          fi
           exit $BUILD_EXIT
+      - name: apk-tools v3 self-check
+        if: hashFiles('dist/packages.adb') != ''
+        run: |
+          echo "=== 容器内校验 .apk 与 packages.adb ==="
+          docker run --rm -v "$PWD/dist:/dist" alpine:3.23 sh -c '
+            set -e
+            apk --version
+            echo "--- apk info ---"
+            apk info --description /dist/luci-app-afrp-*.apk || echo "(apk info 不支持文件参数，跳过)"
+            echo "--- adbdump packages.adb ---"
+            apk adbdump /dist/packages.adb
+          ' | tee dist/apk-selfcheck.log
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-build-log
-          path: openwrt/build.log
+          path: |
+            openwrt/build.log
+            dist/apk-selfcheck.log
       - name: Upload to Release
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
@@ -459,12 +480,13 @@ jobs:
           
           # 清理并复制新文件
           rm -f opkg/*.ipk opkg/Packages opkg/Packages.gz
-          rm -f opkg/*.apk opkg/APKINDEX.tar.gz opkg/noarch/*.apk opkg/noarch/APKINDEX.tar.gz
+          rm -f opkg/*.apk opkg/packages.adb opkg/APKINDEX.tar.gz
+          rm -f opkg/noarch/*.apk opkg/noarch/packages.adb opkg/noarch/APKINDEX.tar.gz
           mkdir -p opkg/noarch
           cp "$IPK_FILE" opkg/
           
           APK_FILE=$(ls dist/luci-app-afrp-${VER}-r*.apk 2>/dev/null | head -1 || true)
-          IDX_FILE=$(ls dist/APKINDEX.tar.gz 2>/dev/null || true)
+          ADB_FILE=$(ls dist/packages.adb 2>/dev/null || true)
           if [ -n "$APK_FILE" ]; then
             cp "$APK_FILE" opkg/
             cp "$APK_FILE" opkg/noarch/
@@ -472,12 +494,12 @@ jobs:
           else
             echo "⚠️ 未找到 apk 包"
           fi
-          if [ -n "$IDX_FILE" ]; then
-            cp "$IDX_FILE" opkg/
-            cp "$IDX_FILE" opkg/noarch/
-            echo "✅ APKINDEX 已复制"
+          if [ -n "$ADB_FILE" ]; then
+            cp "$ADB_FILE" opkg/
+            cp "$ADB_FILE" opkg/noarch/
+            echo "✅ packages.adb 已复制"
           else
-            echo "⚠️ 未找到 APKINDEX.tar.gz"
+            echo "⚠️ 未找到 packages.adb（apk 源未更新）"
           fi
           
           # 生成 Packages 文件

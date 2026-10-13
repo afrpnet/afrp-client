@@ -1,0 +1,72 @@
+name: OpenWrt apk test
+
+# 隔离验证：仅测试 openwrt/tools/build-ipk.php 的容器 apk 打包产物
+# （.apk + packages.adb），不创建 Release、不推送 opkg 源、不触发 Pages。
+# 手动在测试分支上运行，确认产物无误后再合并到 main 并正式发版。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: zlib
+
+      - name: PHP syntax check
+        run: |
+          cd openwrt
+          php -l tools/build-ipk.php
+
+      - name: Build ipk + apk (container apk-tools v3)
+        run: |
+          cd openwrt
+          set +e
+          php tools/build-ipk.php --verify 2>&1 | tee build.log
+          BUILD_EXIT=${PIPESTATUS[0]}
+          set -e
+          if [ "$BUILD_EXIT" != "0" ]; then
+            echo "## build-ipk.php failed (exit $BUILD_EXIT)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            tail -60 build.log >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            exit "$BUILD_EXIT"
+          fi
+          echo "=== dist 产物 ==="
+          ls -la dist/
+
+      - name: apk-tools v3 self-check (alpine container)
+        run: |
+          cd openwrt
+          if [ ! -f dist/packages.adb ]; then
+            echo "::error::dist/packages.adb 不存在，容器 apk 打包未产出"
+            exit 1
+          fi
+          docker run --rm -v "$PWD/dist:/dist" alpine:3.23 sh -c '
+            set -e
+            echo "apk version: $(apk --version)"
+            echo "--- apk info (best-effort) ---"
+            apk info --description /dist/luci-app-afrp-*.apk || echo "(apk info 不支持文件参数，跳过)"
+            echo "--- apk adbdump packages.adb (strict) ---"
+            apk adbdump /dist/packages.adb
+          ' 2>&1 | tee apk-selfcheck.log
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-apk-test
+          path: |
+            openwrt/dist/*.apk
+            openwrt/dist/packages.adb
+            openwrt/dist/*.ipk
+            openwrt/dist/Packages
+            openwrt/build.log
+            openwrt/apk-selfcheck.log

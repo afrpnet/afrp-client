@@ -206,6 +206,131 @@ function ar_parse(string $raw, array &$errs): array
     return $members;
 }
 
+// ---------------------------------------------------------------- apk（Alpine 容器 apk-tools v3）
+
+/** 递归删除目录 */
+function rrmdir(string $dir): void
+{
+    if (!is_dir($dir)) { if (is_file($dir)) { @unlink($dir); } return; }
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($it as $f) {
+        if ($f->isDir()) { @rmdir($f->getPathname()); } else { @unlink($f->getPathname()); }
+    }
+    @rmdir($dir);
+}
+
+/** 检测 docker 是否可用（apk-tools v3 只能在 Alpine 容器里跑） */
+function docker_available(): bool
+{
+    $rc = 0;
+    @exec('docker info >/dev/null 2>&1', $o, $rc);
+    return $rc === 0;
+}
+
+/** 转成 docker -v 可用的宿主绝对路径 */
+function host_abs(string $path): string
+{
+    $real = realpath($path);
+    return str_replace('\\', '/', $real !== false ? $real : $path);
+}
+
+/**
+ * 用 Alpine 容器里的 apk-tools v3 生成 .apk 与 packages.adb（与 OpenWrt 25.12 官方一致）。
+ * docker 不可用时返回 null（跳过 apk，仅保留 opkg .ipk 与通用 tar.gz）。
+ *
+ * @return array{apk:string,adb:string,name:string}|null
+ */
+function build_apk_container(array $files, array $dirs, string $ver, string $rel, string $DIST): ?array
+{
+    if (!docker_available()) {
+        out('');
+        out('⚠️  未检测到 docker，跳过 .apk / packages.adb 生成。');
+        out('    apk-tools v3 需在 Alpine 容器内运行；opkg 的 .ipk 与通用 tar.gz 不受影响。');
+        return null;
+    }
+
+    $stage = $DIST . '/apk-stage';
+    $root  = $stage . '/root';
+    rrmdir($stage);
+    if (!@mkdir($root, 0775, true)) { die_msg('无法创建 apk staging: ' . $root); }
+
+    // 目录（0755）
+    foreach ($dirs as $d) {
+        $dp = $root . '/' . $d;
+        if (!is_dir($dp) && !@mkdir($dp, 0755, true)) { die_msg('无法创建目录: ' . $dp); }
+        @chmod($dp, 0755);
+    }
+    // 文件 + 权限
+    foreach ($files as $dst => $info) {
+        $target = $root . '/' . $dst;
+        $tdir = dirname($target);
+        if (!is_dir($tdir) && !@mkdir($tdir, 0755, true)) { die_msg('无法创建目录: ' . $tdir); }
+        if (!@copy($info['src'], $target)) { die_msg('拷贝到 apk staging 失败: ' . $target); }
+        @chmod($target, $info['mode']);
+    }
+
+    // post-install 控制脚本
+    $postInstall = "#!/bin/sh\n"
+        . "chmod 600 /etc/afrp/config.json 2>/dev/null\n"
+        . "rm -rf /tmp/luci-indexcache /tmp/luci-modulecache\n"
+        . "[ -x /etc/init.d/afrp ] && /etc/init.d/afrp enable\n"
+        . "/etc/init.d/rpcd restart >/dev/null 2>&1\n"
+        . "[ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd reload >/dev/null 2>&1\n"
+        . "exit 0\n";
+    if (@file_put_contents($stage . '/post-install', $postInstall) === false) { die_msg('写入 post-install 失败'); }
+    @chmod($stage . '/post-install', 0755);
+
+    $apkName = "luci-app-afrp-{$ver}-r{$rel}.apk";
+    $desc    = 'AFRP NAT traversal support and management by afrp.net';
+    $version = "{$ver}-r{$rel}";
+
+    // 容器内脚本：payload 归零属主 → apk mkpkg → apk mkndx（未签名索引）
+    $inner = "set -e\n"
+        . "chown -R 0:0 /stage/root\n"
+        . "apk mkpkg \\\n"
+        . "  --info \"name:luci-app-afrp\" \\\n"
+        . "  --info \"version:{$version}\" \\\n"
+        . "  --info \"description:{$desc}\" \\\n"
+        . "  --info \"arch:noarch\" \\\n"
+        . "  --info \"license:MIT\" \\\n"
+        . "  --info \"origin:luci-app-afrp\" \\\n"
+        . "  --info \"url:https://www.afrp.net\" \\\n"
+        . "  --info \"maintainer:AFRP <https://www.afrp.net>\" \\\n"
+        . "  --info \"depends:luci-base uclient-fetch ca-bundle frpc\" \\\n"
+        . "  --script \"post-install:/stage/post-install\" \\\n"
+        . "  --files \"/stage/root\" \\\n"
+        . "  --output \"/stage/{$apkName}\"\n"
+        . "apk mkndx --allow-untrusted --description \"AFRP repository for OpenWrt 25.12+ (apk)\" \\\n"
+        . "  --output /stage/packages.adb /stage/{$apkName}\n";
+    if (@file_put_contents($stage . '/build.sh', $inner) === false) { die_msg('写入 build.sh 失败'); }
+
+    $stageAbs = host_abs($stage);
+    $cmd = 'docker run --rm -v ' . escapeshellarg($stageAbs . ':/stage') . ' alpine:3.23 sh /stage/build.sh 2>&1';
+    out('');
+    out('运行 Alpine 容器 apk-tools：docker run alpine:3.23 (apk mkpkg + apk mkndx)');
+    $output = [];
+    $rc = 0;
+    @exec($cmd, $output, $rc);
+    foreach ($output as $line) { out('  [apk] ' . $line); }
+    if ($rc !== 0) { die_msg('apk 打包失败（docker exit ' . $rc . '）'); }
+
+    $apkStaged = $stage . '/' . $apkName;
+    $adbStaged = $stage . '/packages.adb';
+    if (!is_file($apkStaged)) { die_msg('容器未产出 .apk: ' . $apkStaged); }
+    if (!is_file($adbStaged)) { die_msg('容器未产出 packages.adb: ' . $adbStaged); }
+
+    $finalApk = $DIST . '/' . $apkName;
+    $finalAdb = $DIST . '/packages.adb';
+    if (!@copy($apkStaged, $finalApk)) { die_msg('移动 .apk 失败: ' . $finalApk); }
+    if (!@copy($adbStaged, $finalAdb)) { die_msg('移动 packages.adb 失败: ' . $finalAdb); }
+    rrmdir($stage);
+
+    return ['apk' => $finalApk, 'adb' => $finalAdb, 'name' => $apkName];
+}
+
 // ---------------------------------------------------------------- 构建
 
 function build(): array
@@ -330,80 +455,24 @@ function build(): array
     $pkgGzPath = $DIST . '/Packages.gz';
     @file_put_contents($pkgGzPath, gzencode($pkgIndex, 9));
 
-    // ---- .apk 格式（OpenWrt 25.12+ APK 包管理器）
-    // APK 格式：concatenated tar.gz，包含 .PKGINFO + 控制脚本 + 数据文件
-    $pkginfo = "pkgname = luci-app-afrp\n"
-        . "pkgver = {$ver}-r{$rel}\n"
-        . "pkgdesc = AFRP NAT traversal support and management by afrp.net\n"
-        . "url = https://www.afrp.net\n"
-        . "arch = noarch\n"
-        . "builddate = {$mtime}\n"
-        . "packager = AFRP <https://www.afrp.net>\n"
-        . "size = {$payloadBytes}\n"
-        . "depend = luci-base\n"
-        . "depend = uclient-fetch\n"
-        . "depend = ca-bundle\n"
-        . "depend = frpc\n"
-        . "license = MIT\n";
-
-    $postInstall = "#!/bin/sh\n"
-        . "chmod 600 /etc/afrp/config.json 2>/dev/null\n"
-        . "rm -rf /tmp/luci-indexcache /tmp/luci-modulecache\n"
-        . "[ -x /etc/init.d/afrp ] && /etc/init.d/afrp enable\n"
-        . "/etc/init.d/rpcd restart >/dev/null 2>&1\n"
-        . "[ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd reload >/dev/null 2>&1\n";
-
-    // APK 控制部分：.PKGINFO + .post-install
-    $apkCtl = '';
-    tar_append($apkCtl, $mtime, '.PKGINFO', 0644, $pkginfo);
-    tar_append($apkCtl, $mtime, '.post-install', 0755, $postInstall);
-    $apkCtlGz = gzencode(tar_finish($apkCtl), 9);
-    if ($apkCtlGz === false) { die_msg('APK control.tar.gz 压缩失败'); }
-
-    // APK 数据部分：与 IPK 共用 data.tar.gz
-    // APK 格式是 concatenated tar.gz：control + data
-    $apkName = "luci-app-afrp-{$ver}-r{$rel}.apk";
-    $apkPath = $DIST . '/' . $apkName;
-    $apkContent = $apkCtlGz . $datGz;
-    if (@file_put_contents($apkPath, $apkContent) === false) { die_msg('写入失败: ' . $apkPath); }
-
-    // ---- APKINDEX.tar.gz（apk 仓库索引，未签名，安装时需 --allow-untrusted）
-    $apkFileSize = (int)filesize($apkPath);
-    $ctlCsum = 'Q1' . base64_encode((string)hash('sha1', $apkCtlGz, true));
-    $indexEntry = "C:{$ctlCsum}\n"
-        . "P:luci-app-afrp\n"
-        . "V:{$ver}-r{$rel}\n"
-        . "A:noarch\n"
-        . "S:{$apkFileSize}\n"
-        . "I:{$payloadBytes}\n"
-        . "T:AFRP NAT traversal support and management by afrp.net\n"
-        . "U:https://www.afrp.net\n"
-        . "L:MIT\n"
-        . "o:luci-app-afrp\n"
-        . "m:AFRP <https://www.afrp.net>\n"
-        . "t:{$mtime}\n"
-        . "D:luci-base\n"
-        . "D:uclient-fetch\n"
-        . "D:ca-bundle\n"
-        . "D:frpc\n"
-        . "\n";
-    $repoDesc = "AFRP repository for OpenWrt 25.12+ (apk)\n"
-        . "luci-app-afrp: manage frpc tunnels with OIDC authentication\n";
-    $idx = '';
-    tar_append($idx, $mtime, 'APKINDEX', 0644, $indexEntry);
-    tar_append($idx, $mtime, 'DESCRIPTION', 0644, $repoDesc);
-    $idxGz = gzencode(tar_finish($idx), 9);
-    if ($idxGz === false) { die_msg('APKINDEX.tar.gz 压缩失败'); }
-    $idxPath = $DIST . '/APKINDEX.tar.gz';
-    if (@file_put_contents($idxPath, $idxGz) === false) { die_msg('写入失败: ' . $idxPath); }
+    // ---- .apk + packages.adb（OpenWrt 25.12+ apk-tools v3，走 Alpine 容器）
+    $apkResult = build_apk_container($files, $dirs, $ver, $rel, $DIST);
 
     out("打包完成（v{$ver}，共 " . count($files) . " 个文件，{$installedKb} KB）：");
-    foreach ([[$ipkPath, $ipkName], [$apkPath, $apkName], [$tgzPath, $tgzName], [$idxPath, 'APKINDEX.tar.gz'], [$pkgPath, 'Packages'], [$pkgGzPath, 'Packages.gz']] as $e) {
-        [$p, $n] = $e;
+    $summary = [[$ipkPath, $ipkName], [$tgzPath, $tgzName], [$pkgPath, 'Packages'], [$pkgGzPath, 'Packages.gz']];
+    if ($apkResult !== null) {
+        array_splice($summary, 1, 0, [[$apkResult['apk'], $apkResult['name']]]);
+        $summary[] = [$apkResult['adb'], 'packages.adb'];
+    }
+    foreach ($summary as [$p, $n]) {
         out(sprintf('  %s  %d 字节  sha256=%s', $n, (int)filesize($p), (string)hash_file('sha256', $p)));
     }
 
-    return ['ver' => $ver, 'rel' => $rel, 'files' => $files, 'ipk' => $ipkPath, 'apk' => $apkPath, 'tgz' => $tgzPath, 'idx' => $idxPath];
+    return [
+        'ver' => $ver, 'rel' => $rel, 'files' => $files,
+        'ipk' => $ipkPath, 'tgz' => $tgzPath,
+        'apk' => $apkResult['apk'] ?? '', 'adb' => $apkResult['adb'] ?? '',
+    ];
 }
 
 // ---------------------------------------------------------------- 自检
@@ -469,17 +538,28 @@ function verify(array $b): bool
         out('[ipk] data: ' . count($b['files']) . ' 个文件 + ' . $dirCount . ' 个目录，权限校验 ' . ($errs ? '✗' : '✓'));
     }
 
-    // ---- .apk（OpenWrt 25.12+ APK 格式）
+    // ---- .apk + packages.adb（apk-tools v3 容器产物；docker 不可用时已跳过）
     $apkErr = [];
-    if (isset($b['apk']) && is_file($b['apk'])) {
+    if (!empty($b['apk']) && is_file($b['apk'])) {
         $apkSize = (int)filesize($b['apk']);
         if ($apkSize < 1000) {
             $apkErr[] = 'APK 文件过小';
         } else {
-            out('[apk] 文件大小 ' . $apkSize . ' 字节  ✓');
+            out('[apk] ' . basename($b['apk']) . ' ' . $apkSize . ' 字节  ✓');
+        }
+        if (empty($b['adb']) || !is_file($b['adb'])) {
+            $apkErr[] = 'packages.adb 不存在';
+        } else {
+            $adbRaw = (string)@file_get_contents($b['adb']);
+            // packages.adb 是 apk-tools v3 二进制索引，以 magic "APKADB2" 开头
+            if (substr($adbRaw, 0, 7) !== "APKADB2") {
+                $apkErr[] = 'packages.adb 缺少 APKADB2 magic（非 v3 索引格式）';
+            } else {
+                out('[apk] packages.adb ' . strlen($adbRaw) . ' 字节，APKADB2 magic  ✓');
+            }
         }
     } else {
-        $apkErr[] = 'APK 文件不存在';
+        out('[apk] 未生成（无 docker，已跳过 packages.adb）  ⚠');
     }
 
     $errs = array_merge($errs, $apkErr);
