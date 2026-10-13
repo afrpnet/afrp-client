@@ -813,9 +813,9 @@ List<String>? _matchAppAsset(
 }
 
 /// 执行 App 更新。
-/// Windows（安装版静默安装 / 免安装版替换重启）与 Android（调起系统安装器）
+/// Windows（安装版静默安装后自动重启 / 免安装版替换重启）与 Android（调起系统安装器）
 /// 走自动流程；macOS/Linux/鸿蒙打开下载页手动更新。
-/// 注意：Windows 两条路径都会在启动安装/替换后让本进程退出。
+/// 注意：Windows 两条路径都会让本进程退出，并在安装/替换完成后自动重新拉起。
 Future<void> performAppUpdate(
   String baseUrl,
   UpdateEntry entry, {
@@ -828,11 +828,7 @@ Future<void> performAppUpdate(
     final isSetup = entry.channel == 'installer' ||
         RegExp('setup|install', caseSensitive: false).hasMatch(entry.file);
     if (await isWindowsInstalled() && isSetup) {
-      await Process.start(
-        file.path,
-        ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS'],
-        mode: ProcessStartMode.detached,
-      );
+      await _runInstallerAndRestart(file, Platform.resolvedExecutable);
     } else {
       final binary = await extractExecutable(file, preferredName: 'afrp_oidc.exe');
       await _replacePortableAndRestart(binary);
@@ -850,6 +846,31 @@ Future<void> performAppUpdate(
   if (!ok) {
     throw UpdateException('无法自动打开浏览器，请手动访问：${downloadPageUrl(baseUrl)}');
   }
+}
+
+/// Windows 安装版：临时 bat 等本进程退出 → 静默安装 → 装完自动重启 exe
+/// Inno Setup 静默安装本身不会重开程序，故用包装脚本在 setup.exe 返回后 start 目标 exe。
+Future<void> _runInstallerAndRestart(File installer, String exePath) async {
+  final tmpDir = await getTemporaryDirectory();
+  final bat = File(
+    '${tmpDir.path}${Platform.pathSeparator}afrp_update_${DateTime.now().millisecondsSinceEpoch}.bat',
+  );
+  final currentPid = pid;
+  await bat.writeAsString('''
+@echo off
+timeout /t 2 /nobreak >nul
+:waitloop
+tasklist /fi "PID eq $currentPid" 2>nul | find "$currentPid" >nul
+if not errorlevel 1 (
+  timeout /t 1 /nobreak >nul
+  goto waitloop
+)
+"${installer.path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS
+timeout /t 2 /nobreak >nul
+start "" "$exePath"
+del "%~f0"
+''', flush: true);
+  await Process.start('cmd', ['/c', bat.path], mode: ProcessStartMode.detached);
 }
 
 /// Windows 免安装版：临时 bat 等本进程退出后覆盖文件并重启
