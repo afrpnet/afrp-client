@@ -51,21 +51,37 @@ sudo apt install libgtk-3-0 libsecret-1-0 libjson-glib-1.0-0 libayatana-appindic
 
 ### OpenWrt
 
-**IPK 安装**：
+**添加客户端 opkg 源，安装 .ipk（推荐）**：
 ```bash
-opkg install luci-app-afrp_<版本>_all.ipk
+# 1) 添加软件源（一次即可，之后可自动更新）
+echo 'src/gz afrp https://afrpnet.github.io/afrp-client' >> /etc/opkg/customfeeds.conf
+# 2) 更新列表并安装
+opkg update
+opkg install luci-app-afrp
 ```
-
+**opkg 安装 .ipk（无网络环境时）**
+```bash
+wget -O /tmp/afrp.ipk https://dl.afrp.net/app/luci-app-afrp_1.1.5_all.ipk
+opkg install /tmp/afrp.ipk
+```
+**通用压缩包（无 opkg / 不想装包时）**
+```bash
+wget -O /tmp/afrp.tar.gz https://dl.afrp.net/app/luci-app-afrp-1.1.5.tar.gz
+tar -xzf /tmp/afrp.tar.gz -C /tmp
+cd /tmp/luci-app-afrp-1.1.0 && ./install.sh
+```
+卸载：同一目录 `./install.sh uninstall`（加 `--purge` 连配置一起删）。
 **手动安装**：下载 `luci-app-afrp-<版本>.tar.gz`，解压到 `/usr/lib/lua/luci/`。
 
-安装后在 LuCI 界面「服务 → AFRP」中配置。
+安装后在 LuCI 界面「服务 → AFRP 内网穿透」中配置。
 
 ## 快速开始
 
 1. **登录**：输入账号密码，默认连接 `https://www.afrp.net`
-2. **设置 OIDC 密钥**：在「连接」页选择「粘贴已有密钥」或「一键生成新密钥」
-3. **添加隧道**：选择服务器，点「添加隧道」，填写本地 IP、端口、远程端口
-4. **连接**：点「连接服务器」，状态变绿即成功
+2. **选择服务器**：选择要连接的服务器
+3. **设置 OIDC 密钥**：在「连接」页选择「粘贴已有密钥」或「一键生成新密钥」
+4. **添加隧道**：选择服务器，点「添加隧道」，填写本地 IP、端口、远程端口
+5. **连接**：点「连接服务器」，状态变绿即成功
 
 ## 文档
 
