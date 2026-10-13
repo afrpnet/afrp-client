@@ -323,6 +323,10 @@ jobs:
         with:
           php-version: '8.2'
           extensions: zlib
+      - name: Check PHP syntax
+        run: |
+          cd openwrt
+          php -l tools/build-ipk.php
       - name: Build ipk + apk
         id: build
         continue-on-error: true
