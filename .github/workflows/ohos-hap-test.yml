@@ -98,6 +98,17 @@ jobs:
           echo "=== local.properties ==="
           cat ohos/local.properties
 
+      - name: Configure npm registry (~/.npmrc)
+        run: |
+          # hvigor 安装阶段会读取 $HOME/.npmrc，缺失会 ENOENT 直接失败
+          cat > "$HOME/.npmrc" <<'EOF'
+          registry=https://registry.npmmirror.com/
+          @ohos:registry=https://repo.harmonyos.com/npm/
+          EOF
+          sed -i 's/^[[:space:]]*//' "$HOME/.npmrc"
+          echo "=== ~/.npmrc ==="
+          cat "$HOME/.npmrc"
+
       - name: Build HAP (debug)
         run: |
           set -e
