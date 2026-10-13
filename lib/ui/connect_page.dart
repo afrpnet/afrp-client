@@ -172,7 +172,7 @@ class _ConnectPageState extends State<ConnectPage> {
                     Chip(
                       visualDensity: VisualDensity.compact,
                       avatar: const Icon(Icons.link, size: 16),
-                      label: Text('子域名 ${server.subdomain}'),
+                      label: Text('子域名 ${subdomainBase(server.subdomain)}'),
                     ),
                 ],
               ),
@@ -798,8 +798,8 @@ class _TunnelEditDialogState extends State<TunnelEditDialog> {
                       controller: _subdomain,
                       decoration: InputDecoration(
                         labelText: '子域名前缀',
-                        hintText: '例如 ${server.subdomain}-abc',
-                        helperText: '将得到 ${server.subdomain}-${_subdomain.text.isEmpty ? 'xxx' : _subdomain.text} 形式的地址',
+                        hintText: '例如 abc',
+                        helperText: '将得到 ${_subdomain.text.isEmpty ? 'xxx' : _subdomain.text}.${subdomainBase(server.subdomain)} 形式的地址',
                         border: const OutlineInputBorder(),
                       ),
                       onChanged: (_) => setState(() {}),

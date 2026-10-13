@@ -166,6 +166,18 @@ class ServerInfo {
   String get endpoint => '$addr:$port';
 }
 
+/// 去掉子域名基础域的通配符前缀：`*.afrp.net` → `afrp.net`，`*` → ``。
+/// 用于把「输入前缀 + 基础域」拼成 `xxx.afrp.net` 形式的可访问地址展示。
+String subdomainBase(String s) {
+  var b = s.trim();
+  if (b.startsWith('*.')) {
+    b = b.substring(2);
+  } else if (b.startsWith('*')) {
+    b = b.substring(1);
+  }
+  return b;
+}
+
 class Plan {
   Plan({
     required this.id,
@@ -425,10 +437,9 @@ class Tunnel {
         return '$type  $local → ${customDomain.trim()}';
       }
       if (subdomain.trim().isNotEmpty) {
-        final prefix = (server == null || server.subdomain.isEmpty)
-            ? subdomain.trim()
-            : '${server.subdomain}-${subdomain.trim()}';
-        return '$type  $local → 子域名 $prefix';
+        final base = server == null ? '' : subdomainBase(server.subdomain);
+        final addr = base.isEmpty ? subdomain.trim() : '${subdomain.trim()}.$base';
+        return '$type  $local → 子域名 $addr';
       }
       return '$type  $local → （未设域名）';
     }
