@@ -334,14 +334,18 @@ jobs:
           set -x
           php tools/build-ipk.php --verify 2>&1 | tee build.log
           BUILD_EXIT=${PIPESTATUS[0]}
-          mkdir -p ../dist ../opkg
+          mkdir -p ../dist ../opkg/noarch
           cp dist/*.ipk ../dist/
           cp dist/*.apk ../dist/
           cp dist/*.tar.gz ../dist/
+          cp dist/APKINDEX.tar.gz ../dist/
           rm -f ../opkg/*.ipk ../opkg/Packages ../opkg/Packages.gz
+          rm -f ../opkg/*.apk ../opkg/APKINDEX.tar.gz ../opkg/noarch/*.apk ../opkg/noarch/APKINDEX.tar.gz
           cp dist/*.ipk ../opkg/
           cp dist/Packages ../opkg/
           cp dist/Packages.gz ../opkg/
+          cp dist/*.apk ../opkg/ ../opkg/noarch/
+          cp dist/APKINDEX.tar.gz ../opkg/ ../opkg/noarch/
           exit $BUILD_EXIT
       - name: Upload build log
         if: always()
@@ -389,13 +393,17 @@ jobs:
             [ -f "$f" ] || continue
             filename=$(basename "$f")
             
-            # 提取文件中的版本号
+            # 提取文件中的版本号（下划线或连字符分隔）
             if [[ "$filename" =~ _([0-9]+\.[0-9]+\.[0-9]+) ]]; then
               file_ver="${BASH_REMATCH[1]}"
-              if [ "$file_ver" != "$VER" ]; then
-                echo "删除旧版本文件: $filename (版本 $file_ver)"
-                rm -f "$f"
-              fi
+            elif [[ "$filename" =~ -([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+              file_ver="${BASH_REMATCH[1]}"
+            else
+              continue
+            fi
+            if [ "$file_ver" != "$VER" ]; then
+              echo "删除旧版本文件: $filename (版本 $file_ver)"
+              rm -f "$f"
             fi
           done
           
@@ -420,7 +428,24 @@ jobs:
           
           # 清理并复制新文件
           rm -f opkg/*.ipk opkg/Packages opkg/Packages.gz
+          rm -f opkg/*.apk opkg/APKINDEX.tar.gz opkg/noarch/*.apk opkg/noarch/APKINDEX.tar.gz
+          mkdir -p opkg/noarch
           cp "$IPK_FILE" opkg/
+          
+          APK_FILE=$(ls dist/luci-app-afrp-${VER}-r*.apk 2>/dev/null | head -1 || true)
+          IDX_FILE=$(ls dist/APKINDEX.tar.gz 2>/dev/null || true)
+          if [ -n "$APK_FILE" ]; then
+            cp "$APK_FILE" opkg/ opkg/noarch/
+            echo "✅ apk 包已复制: $(basename "$APK_FILE")"
+          else
+            echo "⚠️ 未找到 apk 包"
+          fi
+          if [ -n "$IDX_FILE" ]; then
+            cp "$IDX_FILE" opkg/ opkg/noarch/
+            echo "✅ APKINDEX 已复制"
+          else
+            echo "⚠️ 未找到 APKINDEX.tar.gz"
+          fi
           
           # 生成 Packages 文件
           SIZE=$(stat -c%s "$IPK_FILE" 2>/dev/null || stat -f%z "$IPK_FILE")

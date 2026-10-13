@@ -42,6 +42,24 @@ opkg install /tmp/afrp.ipk
 > 
 > **注意**：v1.1.5+ 版本依赖 `frpc` 包，如果官方源有则自动安装；如果没有，插件会在首次使用时从 R2 自动下载 frpc 核心。
 
+### 1b. apk 安装 .apk（OpenWrt 25.12+）
+
+OpenWrt 25.12 起改用 apk 包管理器，添加本仓库的 apk 源（与 opkg 源同地址）：
+
+```sh
+echo "https://afrpnet.github.io/afrp-client" >> /etc/apk/repositories
+apk update
+apk add --allow-untrusted luci-app-afrp
+```
+
+或直接下载包文件安装（文件名见 Releases / 下载页）：
+
+```sh
+apk add --allow-untrusted /tmp/luci-app-afrp-*.apk
+```
+
+> apk 源当前未签名，安装时需加 `--allow-untrusted`。
+
 ### 2. 通用压缩包（无 opkg / 不想装包时）
 
 ```sh

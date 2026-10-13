@@ -333,7 +333,7 @@ function build(): array
     // ---- .apk 格式（OpenWrt 25.12+ APK 包管理器）
     // APK 格式：concatenated tar.gz，包含 .PKGINFO + 控制脚本 + 数据文件
     $pkginfo = "pkgname = luci-app-afrp\n"
-        . "pkgver = {$ver}\n"
+        . "pkgver = {$ver}-r{$rel}\n"
         . "pkgdesc = AFRP NAT traversal support and management by afrp.net\n"
         . "url = https://www.afrp.net\n"
         . "arch = noarch\n"
@@ -367,13 +367,43 @@ function build(): array
     $apkContent = $apkCtlGz . $datGz;
     if (@file_put_contents($apkPath, $apkContent) === false) { die_msg('写入失败: ' . $apkPath); }
 
+    // ---- APKINDEX.tar.gz（apk 仓库索引，未签名，安装时需 --allow-untrusted）
+    $apkFileSize = (int)filesize($apkPath);
+    $ctlCsum = 'Q1' . base64_encode((string)hash('sha1', $apkCtlGz, true));
+    $indexEntry = "C:{$ctlCsum}\n"
+        . "P:luci-app-afrp\n"
+        . "V:{$ver}-r{$rel}\n"
+        . "A:noarch\n"
+        . "S:{$apkFileSize}\n"
+        . "I:{$payloadBytes}\n"
+        . "T:AFRP NAT traversal support and management by afrp.net\n"
+        . "U:https://www.afrp.net\n"
+        . "L:MIT\n"
+        . "o:luci-app-afrp\n"
+        . "m:AFRP <https://www.afrp.net>\n"
+        . "t:{$mtime}\n"
+        . "D:luci-base\n"
+        . "D:uclient-fetch\n"
+        . "D:ca-bundle\n"
+        . "D:frpc\n"
+        . "\n";
+    $repoDesc = "AFRP repository for OpenWrt 25.12+ (apk)\n"
+        . "luci-app-afrp: manage frpc tunnels with OIDC authentication\n";
+    $idx = '';
+    tar_append($idx, $mtime, 'APKINDEX', 0644, $indexEntry);
+    tar_append($idx, $mtime, 'DESCRIPTION', 0644, $repoDesc);
+    $idxGz = gzencode(tar_finish($idx), 9);
+    if ($idxGz === false) { die_msg('APKINDEX.tar.gz 压缩失败'); }
+    $idxPath = $DIST . '/APKINDEX.tar.gz';
+    if (@file_put_contents($idxPath, $idxGz) === false) { die_msg('写入失败: ' . $idxPath); }
+
     out("打包完成（v{$ver}，共 " . count($files) . " 个文件，{$installedKb} KB）：");
-    foreach ([[$ipkPath, $ipkName], [$apkPath, $apkName], [$tgzPath, $tgzName], [$pkgPath, 'Packages'], [$pkgGzPath, 'Packages.gz']] as $e) {
+    foreach ([[$ipkPath, $ipkName], [$apkPath, $apkName], [$tgzPath, $tgzName], [$idxPath, 'APKINDEX.tar.gz'], [$pkgPath, 'Packages'], [$pkgGzPath, 'Packages.gz']] as $e) {
         [$p, $n] = $e;
         out(sprintf('  %s  %d 字节  sha256=%s', $n, (int)filesize($p), (string)hash_file('sha256', $p)));
     }
 
-    return ['ver' => $ver, 'rel' => $rel, 'files' => $files, 'ipk' => $ipkPath, 'apk' => $apkPath, 'tgz' => $tgzPath];
+    return ['ver' => $ver, 'rel' => $rel, 'files' => $files, 'ipk' => $ipkPath, 'apk' => $apkPath, 'tgz' => $tgzPath, 'idx' => $idxPath];
 }
 
 // ---------------------------------------------------------------- 自检
