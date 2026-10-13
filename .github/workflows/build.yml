@@ -347,8 +347,7 @@ jobs:
           mkdir -p ../dist ../opkg/noarch
           cp dist/*.ipk ../dist/
           cp dist/*.apk ../dist/
-          cp dist/*.tar.gz ../dist/
-          cp dist/APKINDEX.tar.gz ../dist/
+          cp dist/luci-app-afrp-*.tar.gz ../dist/
           rm -f ../opkg/*.ipk ../opkg/Packages ../opkg/Packages.gz
           rm -f ../opkg/*.apk ../opkg/APKINDEX.tar.gz ../opkg/noarch/*.apk ../opkg/noarch/APKINDEX.tar.gz
           cp dist/*.ipk ../opkg/
