@@ -142,6 +142,38 @@ function cmdStatus() {
 	});
 }
 
+// 按版本号排序（从高到低）
+function sortCandidates(list) {
+	for (let i = 1; i < length(list); i++) {
+		let key = list[i];
+		let j = i - 1;
+		while (j >= 0 && cmpVer(list[j].version, key.version) < 0) {
+			list[j + 1] = list[j];
+			j--;
+		}
+		list[j + 1] = key;
+	}
+	return list;
+}
+
+function cmpVer(a, b) {
+	function parts(v) {
+		return String(v || '').replace(/^[vV]/, '').split('.').map(function(s) {
+			let m = /^\d+/.exec(s);
+			return m ? parseInt(m[0], 10) : 0;
+		});
+	}
+	let pa = parts(a), pb = parts(b);
+	let n = Math.max(pa.length, pb.length);
+	for (let i = 0; i < n; i++) {
+		let x = i < pa.length ? pa[i] : 0;
+		let y = i < pb.length ? pb[i] : 0;
+		if (x != y)
+			return x < y ? -1 : 1;
+	}
+	return 0;
+}
+
 function cmdCheck(base, arch) {
 	let detArch = trim(str(arch));
 	if (detArch == '') {
@@ -269,38 +301,6 @@ function findR2Url(mirrors) {
 		}
 	}
 	return '';
-}
-
-// 按版本号排序（从高到低）
-function sortCandidates(list) {
-	for (let i = 1; i < length(list); i++) {
-		let key = list[i];
-		let j = i - 1;
-		while (j >= 0 && cmpVer(list[j].version, key.version) < 0) {
-			list[j + 1] = list[j];
-			j--;
-		}
-		list[j + 1] = key;
-	}
-	return list;
-}
-
-function cmpVer(a, b) {
-	function parts(v) {
-		return String(v || '').replace(/^[vV]/, '').split('.').map(function(s) {
-			let m = /^\d+/.exec(s);
-			return m ? parseInt(m[0], 10) : 0;
-		});
-	}
-	let pa = parts(a), pb = parts(b);
-	let n = Math.max(pa.length, pb.length);
-	for (let i = 0; i < n; i++) {
-		let x = i < pa.length ? pa[i] : 0;
-		let y = i < pb.length ? pb[i] : 0;
-		if (x != y)
-			return x < y ? -1 : 1;
-	}
-	return 0;
 }
 
 function cmdInstall(url, sha256, fname) {
