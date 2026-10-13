@@ -238,8 +238,7 @@ function build(): array
     // ---- control 元数据
     $control = "Package: luci-app-afrp\n"
         . "Version: {$ver}\n"
-        . "Depends: luci-base, uclient-fetch\n"
-        . "Recommends: ca-bundle\n"
+        . "Depends: luci-base, uclient-fetch, ca-bundle, frpc\n"
         . "SourceName: luci-app-afrp\n"
         . "License: MIT\n"
         . "Section: luci\n"
@@ -317,7 +316,7 @@ function build(): array
     $ipkSha  = (string)hash_file('sha256', $ipkPath);
     $pkgIndex = "Package: luci-app-afrp\n"
         . "Version: {$ver}\n"
-        . "Depends: luci-base, uclient-fetch, ca-bundle\n"
+        . "Depends: luci-base, uclient-fetch, ca-bundle, frpc\n"
         . "License: MIT\n"
         . "Section: luci\n"
         . "Architecture: all\n"
@@ -573,7 +572,7 @@ function publish(string $webRoot, string $siteUrl, string $date, ?string $notes,
 
     $pkgIndex = "Package: luci-app-afrp\n"
         . "Version: {$b['ver']}\n"
-        . "Depends: luci-base, uclient-fetch, ca-bundle\n"
+        . "Depends: luci-base, uclient-fetch, ca-bundle, frpc\n"
         . "License: MIT\n"
         . "Section: luci\n"
         . "Architecture: all\n"
