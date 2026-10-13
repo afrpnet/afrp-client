@@ -447,26 +447,17 @@ function verify(array $b): bool
             $apkErr[] = 'APK 文件过小';
         } else {
             $apkRaw = (string)@file_get_contents($b['apk']);
-            // 找到第一个 gzip 流的结束位置（通过解析 gzip trailer 的 ISIZE）
+            // 二分查找第一个 gzip 流的结束位置
+            $lo = 8;
+            $hi = $apkSize;
             $firstEnd = $apkSize;
-            if (substr($apkRaw, 0, 2) === "\x1f\x8b") {
-                $flen = strlen($apkRaw);
-                $pos = 10;
-                $flg = ord($apkRaw[3]);
-                if ($flg & 0x04) { // FEXTRA
-                    if ($pos + 2 <= $flen) {
-                        $xlen = unpack('v', substr($apkRaw, $pos, 2))[1];
-                        $pos += 2 + $xlen;
-                    }
-                }
-                if ($flg & 0x08) { while ($pos < $flen && ord($apkRaw[$pos]) !== 0) $pos++; $pos++; } // FNAME
-                if ($flg & 0x10) { while ($pos < $flen && ord($apkRaw[$pos]) !== 0) $pos++; $pos++; } // FCOMMENT
-                if ($flg & 0x02) $pos += 2; // FHCRC
-                $isize = unpack('V', substr($apkRaw, $flen - 4, 4))[1];
-                $est = $pos + $isize + ($isize > 0 ? (int)($isize / 50) : 100) + 256;
-                for ($end = max($pos + 8, $est); $end <= $flen; $end++) {
-                    $test = @gzdecode(substr($apkRaw, 0, $end));
-                    if ($test !== false) { $firstEnd = $end; break; }
+            while ($lo <= $hi) {
+                $mid = (int)(($lo + $hi) / 2);
+                if (@gzdecode(substr($apkRaw, 0, $mid)) !== false) {
+                    $firstEnd = $mid;
+                    $hi = $mid - 1;
+                } else {
+                    $lo = $mid + 1;
                 }
             }
             $part1 = substr($apkRaw, 0, $firstEnd);

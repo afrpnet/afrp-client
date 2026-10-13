@@ -326,7 +326,9 @@ jobs:
       - name: Build ipk + apk
         run: |
           cd openwrt
-          php tools/build-ipk.php --verify
+          set -x
+          php tools/build-ipk.php --verify 2>&1 || { echo "❌ build-ipk.php 失败"; exit 1; }
+          set +x
           mkdir -p ../dist ../opkg
           cp dist/*.ipk ../dist/
           cp dist/*.apk ../dist/
