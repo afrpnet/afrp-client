@@ -68,6 +68,9 @@ case "$FILENAME" in
     if [[ "$FILENAME" == *.ipk ]]; then
       CHANNEL="ipk"; ARCH="all"
       NOTES="OpenWrt LuCI 插件（opkg 安装）"
+    elif [[ "$FILENAME" == *.apk ]]; then
+      CHANNEL="apk"; ARCH="all"
+      NOTES="OpenWrt LuCI 插件（apk 安装，OpenWrt 25.12+）"
     elif [[ "$FILENAME" == *.tar.gz ]]; then
       CHANNEL="tar.gz"; ARCH="all"
       NOTES="OpenWrt LuCI 插件包（手动安装）"
