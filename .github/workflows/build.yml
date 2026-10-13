@@ -331,9 +331,8 @@ jobs:
           cp dist/*.ipk ../dist/
           cp dist/*.apk ../dist/
           cp dist/*.tar.gz ../dist/
-          rm -f ../opkg/*.ipk ../opkg/*.apk ../opkg/Packages ../opkg/Packages.gz
+          rm -f ../opkg/*.ipk ../opkg/Packages ../opkg/Packages.gz
           cp dist/*.ipk ../opkg/
-          cp dist/*.apk ../opkg/
           cp dist/Packages ../opkg/
           cp dist/Packages.gz ../opkg/
       - name: Upload to Release

@@ -439,28 +439,75 @@ function verify(array $b): bool
         out('[ipk] data: ' . count($b['files']) . ' 个文件 + ' . $dirCount . ' 个目录，权限校验 ' . ($errs ? '✗' : '✓'));
     }
 
-    // ---- .apk（OpenWrt 25.12+ APK 格式）
+    // ---- .apk（OpenWrt 25.12+ APK 格式：concatenated gzip streams）
     $apkErr = [];
     if (isset($b['apk']) && is_file($b['apk'])) {
         $apkSize = (int)filesize($b['apk']);
         if ($apkSize < 1000) {
             $apkErr[] = 'APK 文件过小';
         } else {
-            // 简单验证：检查文件是否包含 .PKGINFO 和 .post-install 的标记
             $apkRaw = (string)@file_get_contents($b['apk']);
-            if (strpos($apkRaw, '.PKGINFO') === false) {
-                $apkErr[] = 'APK 未找到 .PKGINFO 标记';
+            // 找到第一个 gzip 流的结束位置（通过解析 gzip trailer 的 ISIZE）
+            $firstEnd = $apkSize;
+            if (substr($apkRaw, 0, 2) === "\x1f\x8b") {
+                $flen = strlen($apkRaw);
+                $pos = 10;
+                $flg = ord($apkRaw[3]);
+                if ($flg & 0x04) { // FEXTRA
+                    if ($pos + 2 <= $flen) {
+                        $xlen = unpack('v', substr($apkRaw, $pos, 2))[1];
+                        $pos += 2 + $xlen;
+                    }
+                }
+                if ($flg & 0x08) { while ($pos < $flen && ord($apkRaw[$pos]) !== 0) $pos++; $pos++; } // FNAME
+                if ($flg & 0x10) { while ($pos < $flen && ord($apkRaw[$pos]) !== 0) $pos++; $pos++; } // FCOMMENT
+                if ($flg & 0x02) $pos += 2; // FHCRC
+                $isize = unpack('V', substr($apkRaw, $flen - 4, 4))[1];
+                $est = $pos + $isize + ($isize > 0 ? (int)($isize / 50) : 100) + 256;
+                for ($end = max($pos + 8, $est); $end <= $flen; $end++) {
+                    $test = @gzdecode(substr($apkRaw, 0, $end));
+                    if ($test !== false) { $firstEnd = $end; break; }
+                }
             }
-            if (strpos($apkRaw, '.post-install') === false) {
-                $apkErr[] = 'APK 未找到 .post-install 标记';
+            $part1 = substr($apkRaw, 0, $firstEnd);
+            $part2 = substr($apkRaw, $firstEnd);
+            $tar1 = @gzdecode($part1);
+            $apkParts = [];
+            if ($tar1 === false) {
+                $apkErr[] = 'APK 控制段 gzip 解压失败';
+            } else {
+                foreach (tar_parse($tar1) as $name => $info) { $apkParts[$name] = $info; }
             }
-            // 验证数据文件大小（APK 应该比 IPK 小，因为没有 ar 包装）
-            $ipkSize = isset($b['ipk']) ? (int)filesize($b['ipk']) : 0;
-            if ($ipkSize > 0 && $apkSize > $ipkSize * 2) {
-                $apkErr[] = 'APK 文件异常过大';
+            if (strlen($part2) > 0) {
+                $tar2 = @gzdecode($part2);
+                if ($tar2 === false) {
+                    $apkErr[] = 'APK 数据段 gzip 解压失败';
+                } else {
+                    foreach (tar_parse($tar2) as $name => $info) { $apkParts[$name] = $info; }
+                }
             }
             if (!$apkErr) {
-                out('[apk] 文件大小 ' . $apkSize . ' 字节，包含 .PKGINFO + .post-install  ✓');
+                if (!isset($apkParts['.PKGINFO'])) {
+                    $apkErr[] = 'APK 缺少 .PKGINFO';
+                } else {
+                    $pkginfo = $apkParts['.PKGINFO']['data'];
+                    foreach (['pkgname = luci-app-afrp', "pkgver = {$b['ver']}", 'arch = noarch', 'depend = frpc'] as $need) {
+                        if (strpos($pkginfo, $need) === false) { $apkErr[] = '.PKGINFO 缺少: ' . $need; }
+                    }
+                }
+                if (!isset($apkParts['.post-install'])) {
+                    $apkErr[] = 'APK 缺少 .post-install';
+                } elseif (($apkParts['.post-install']['mode'] ?? 0) !== 0755) {
+                    $apkErr[] = '.post-install 权限应为 0755';
+                }
+                foreach ($b['files'] as $dst => $info) {
+                    $key = './' . $dst;
+                    if (!isset($apkParts[$key])) { $apkErr[] = "APK data 缺少文件: {$dst}"; continue; }
+                    if ($apkParts[$key]['size'] !== (int)@filesize($info['src'])) { $apkErr[] = "APK {$dst} 大小不一致"; }
+                }
+                if (!$apkErr) {
+                    out('[apk] .PKGINFO + .post-install + data 完整  ✓');
+                }
             }
         }
     } else {
