@@ -351,7 +351,10 @@ jobs:
       - name: Upload to Release
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          gh release upload "v$VER" dist/* --clobber
+          echo "=== 检查 dist/ 目录 ==="
+          ls -la dist/ || echo "dist/ 目录不存在"
+          echo "=== 上传文件到 Release v$VER ==="
+          gh release upload "v$VER" dist/* --clobber 2>&1 || echo "上传失败"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
