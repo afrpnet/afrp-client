@@ -44,10 +44,10 @@ opkg install /tmp/afrp.ipk
 
 ### 1b. apk 安装 .apk（OpenWrt 25.12+）
 
-OpenWrt 25.12 起改用 apk 包管理器，添加本仓库的 apk 源（与 opkg 源同地址）：
+OpenWrt 25.12 起改用 apk 包管理器，索引为 apk-tools v3 的 `packages.adb`。仓库行需**直接指向 packages.adb 完整地址**（架构已含在路径中，不再自动追加）：
 
 ```sh
-echo "https://afrpnet.github.io/afrp-client" >> /etc/apk/repositories
+echo "https://afrpnet.github.io/afrp-client/packages.adb" > /etc/apk/repositories.d/afrp.list
 apk update
 apk add --allow-untrusted luci-app-afrp
 ```
@@ -59,6 +59,7 @@ apk add --allow-untrusted /tmp/luci-app-afrp-*.apk
 ```
 
 > apk 源当前未签名，安装时需加 `--allow-untrusted`。
+> 旧写法 `echo "...afrp-client" >> /etc/apk/repositories`（追加目录、依赖 APKINDEX.tar.gz）对 25.12 无效，已弃用。
 
 ### 2. 通用压缩包（无 opkg / 不想装包时）
 
