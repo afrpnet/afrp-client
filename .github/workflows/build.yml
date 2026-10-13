@@ -331,16 +331,19 @@ jobs:
         id: build
         run: |
           cd openwrt
-          set -x
-          php tools/build-ipk.php --verify 2>&1 | tee build.log
-          BUILD_EXIT=${PIPESTATUS[0]}
+          set +e
+          php tools/build-ipk.php --verify > build.log 2>&1
+          BUILD_EXIT=$?
+          set -e
           if [ "$BUILD_EXIT" != "0" ]; then
             echo "## build-ipk.php failed (exit $BUILD_EXIT)" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             tail -40 build.log >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             tail -20 build.log | sed 's/^/::error::/'
+            exit $BUILD_EXIT
           fi
+          cat build.log
           mkdir -p ../dist ../opkg/noarch
           cp dist/*.ipk ../dist/
           cp dist/*.apk ../dist/
