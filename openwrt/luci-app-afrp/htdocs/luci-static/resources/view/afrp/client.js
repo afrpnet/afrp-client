@@ -70,7 +70,7 @@ return view.extend({
 		var resultDiv = E('div', { style: 'padding:0' }, '');
 		var srvArea = E('div', { style: 'padding:0' }, '');
 		var secretArea = E('div', { style: 'padding:0' }, '');
-		var frpcStatus = E('div', { style: 'display:flex;align-items:center;min-height:36px;padding:0' }, '');
+		var frpcStatus = E('div', { style: 'display:flex;align-items:center;padding:8px 0' }, '');
 
 		/* ---------- 密码显隐切换 ---------- */
 
