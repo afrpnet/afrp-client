@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-afrp
-PKG_VERSION:=1.1.7
+PKG_VERSION:=1.1.10
 PKG_RELEASE:=1
 
 PKG_LICENSE:=MIT
