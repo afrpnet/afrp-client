@@ -461,16 +461,51 @@ jobs:
           echo "=== locate unsigned hap ==="
           find . -name '*.hap' -type f 2>/dev/null | grep -v oh_modules | xargs -r ls -la || true
 
-      - name: Sign HAP with OpenHarmony SDK material (local self-sign)
+      - name: Sign HAP (AGC release material if provided, else OpenHarmony self-sign)
+        env:
+          # AGC 正式签名材料（可选）。齐备则用华为发布证书/Profile 正式签名（真机可装、可上架）；
+          # 缺任一则回落到 SDK 自带 OpenHarmony CA 自签（仅开发者模式/模拟器）。
+          # 二进制材料（.p12/.cer/.p7b）以 base64 存进 GitHub Secrets。口令/别名亦走 Secrets。
+          OHOS_AGC_KEYSTORE_B64: ${{ secrets.OHOS_AGC_KEYSTORE_B64 }}
+          OHOS_AGC_KEYSTORE_PWD: ${{ secrets.OHOS_AGC_KEYSTORE_PWD }}
+          OHOS_AGC_KEY_ALIAS: ${{ secrets.OHOS_AGC_KEY_ALIAS }}
+          OHOS_AGC_KEY_PWD: ${{ secrets.OHOS_AGC_KEY_PWD }}
+          OHOS_AGC_CERT_B64: ${{ secrets.OHOS_AGC_CERT_B64 }}
+          OHOS_AGC_PROFILE_B64: ${{ secrets.OHOS_AGC_PROFILE_B64 }}
+          OHOS_AGC_COMPAT_VERSION: ${{ secrets.OHOS_AGC_COMPAT_VERSION }}
         run: |
           set -e
           REPO="$(pwd)"
           TC="$OHOS_NDK_HOME/toolchains/lib"
           ST="$TC/hap-sign-tool.jar"
           [ -f "$ST" ] || { echo "!! hap-sign-tool.jar 不在 $TC"; ls -la "$TC" 2>/dev/null || true; exit 1; }
+
+          # 定位 hvigor 产出的未签名 hap（两条签名路径共用）
+          UNSIGNED=$(find "$REPO" -name '*unsigned*.hap' -type f 2>/dev/null | grep -v oh_modules | head -1)
+          [ -n "$UNSIGNED" ] || UNSIGNED=$(find "$REPO" -name '*.hap' -type f 2>/dev/null | grep -v oh_modules | head -1)
+          echo "UNSIGNED=$UNSIGNED"
+          [ -n "$UNSIGNED" ] || { echo "!! 找不到未签名 hap"; exit 1; }
+          mkdir -p "$REPO/build/ohos/outputs"
+          SIGNED="$REPO/build/ohos/outputs/afrp-oidc-client-ohos-arm64.hap"
+
+          if [ -n "$OHOS_AGC_KEYSTORE_B64" ] && [ -n "$OHOS_AGC_CERT_B64" ] && [ -n "$OHOS_AGC_PROFILE_B64" ] \
+             && [ -n "$OHOS_AGC_KEYSTORE_PWD" ] && [ -n "$OHOS_AGC_KEY_PWD" ] && [ -n "$OHOS_AGC_KEY_ALIAS" ]; then
+            echo "=== 检测到 AGC 正式材料 → 华为发布证书签名（真机/上架可用）==="
+            W="$HOME/ohsign-agc"; rm -rf "$W"; mkdir -p "$W"; cd "$W"
+            printf '%s' "$OHOS_AGC_KEYSTORE_B64" | base64 -d > agc.p12
+            printf '%s' "$OHOS_AGC_CERT_B64"     | base64 -d > agc.cer
+            printf '%s' "$OHOS_AGC_PROFILE_B64"  | base64 -d > agc.p7b
+            echo "material bytes: p12=$(wc -c < agc.p12) cer=$(wc -c < agc.cer) p7b=$(wc -c < agc.p7b)"
+            # AGC 下发的 .p7b 已是华为签名的 release profile → profileSigned 1。
+            java -jar "$ST" sign-app -mode localSign -keyAlias "$OHOS_AGC_KEY_ALIAS" -keyPwd "$OHOS_AGC_KEY_PWD" -appCertFile agc.cer -profileFile agc.p7b -profileSigned 1 -inFile "$UNSIGNED" -signAlg SHA256withECDSA -keystoreFile agc.p12 -keystorePwd "$OHOS_AGC_KEYSTORE_PWD" -outFile "$SIGNED" -compatibleVersion "${OHOS_AGC_COMPAT_VERSION:-26}" -signCode 1
+            echo "=== AGC 正式签名完成 ==="
+            ls -la "$SIGNED"
+            exit 0
+          fi
+
+          echo "=== 未提供完整 AGC 材料 → 回落 OpenHarmony SDK 自签（开发者模式/模拟器可装，不可上架）==="
           # 用 SDK 自带的 OpenHarmony CA 材料在 CI 内自签：新建 app 密钥→CSR→CA 签出证书链→
-          # 写进 release profile 模板→sign-profile→sign-app。产出本地签名 HAP（开发者模式/模拟器可装，
-          # 不能上架正式分发；正式分发需华为 AGC 证书）。全部口令 123456（OpenHarmony.p12 默认）。
+          # 写进 release profile 模板→sign-profile→sign-app。全部口令 123456（OpenHarmony.p12 默认）。
           BUNDLE=$(node -e 'const fs=require("fs");const s=fs.readFileSync(process.argv[1],"utf8");const m=s.match(/bundleName"?\s*:\s*"([^"]+)"/);console.log(m?m[1]:"")' "$REPO/ohos/AppScope/app.json5")
           echo "BUNDLE=$BUNDLE"
           [ -n "$BUNDLE" ] || { echo "!! 读不到 bundleName"; exit 1; }
@@ -503,13 +538,6 @@ jobs:
           ' "$NOW" "$AFTER" "$TC/UnsgnedReleasedProfileTemplate.json" "$BUNDLE"
           echo "=== 5) sign-profile ==="
           java -jar "$ST" sign-profile -mode localSign -keyAlias "openharmony application profile release" -keyPwd 123456 -profileCertFile "$TC/OpenHarmonyProfileRelease.pem" -inFile profile.json -signAlg SHA256withECDSA -keystoreFile "$TC/OpenHarmony.p12" -keystorePwd 123456 -outFile release.p7b
-          echo "=== locate unsigned hap ==="
-          UNSIGNED=$(find "$REPO" -name '*unsigned*.hap' -type f 2>/dev/null | grep -v oh_modules | head -1)
-          [ -n "$UNSIGNED" ] || UNSIGNED=$(find "$REPO" -name '*.hap' -type f 2>/dev/null | grep -v oh_modules | grep -v "$W" | head -1)
-          echo "UNSIGNED=$UNSIGNED"
-          [ -n "$UNSIGNED" ] || { echo "!! 找不到未签名 hap"; exit 1; }
-          mkdir -p "$REPO/build/ohos/outputs"
-          SIGNED="$REPO/build/ohos/outputs/afrp-oidc-client-ohos-arm64.hap"
           echo "=== 6) sign-app ==="
           java -jar "$ST" sign-app -mode localSign -keyAlias "afrp_app" -keyPwd 123456 -appCertFile appchain.cer -profileFile release.p7b -profileSigned 1 -inFile "$UNSIGNED" -signAlg SHA256withECDSA -keystoreFile app.p12 -keystorePwd 123456 -outFile "$SIGNED" -compatibleVersion 26 -signCode 1
           echo "=== signed hap ==="
