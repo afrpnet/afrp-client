@@ -257,7 +257,12 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
       if (check == null) {
-        snack(context, '当前平台暂不支持在线更新 frpc', error: true);
+        if (Platform.isAndroid) {
+          // 安卓版 frpc 以 jniLibs 形式随 App 打包，不能单独替换；升级 App 即同步更新
+          snack(context, '安卓版 frpc 随 App 打包，升级 App 即同步更新，无需单独检查');
+        } else {
+          snack(context, '当前平台暂不支持在线更新 frpc', error: true);
+        }
       } else if (!check.hasUpdate) {
         snack(context, 'frpc 已是最新版本（${check.currentVersion}）');
       } else {

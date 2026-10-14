@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/api_client.dart';
 import '../core/app_state.dart';
@@ -541,12 +542,14 @@ class _ConnectPageState extends State<ConnectPage> {
         return;
       }
     }
+    final resolvedAddr = await resolveServerAddr(server.addr);
     final toml = buildFrpcToml(
       server: server,
       user: user,
       config: appState.config,
       clientSecret: appState.clientSecret ?? '',
       tunnels: tunnels,
+      resolvedAddr: resolvedAddr,
     );
     try {
       await frpcManager.start(toml);
@@ -596,6 +599,19 @@ class _ConnectPageState extends State<ConnectPage> {
                 const SizedBox(width: 8),
                 Text('运行日志', style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
+                TextButton.icon(
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('复制'),
+                  onPressed: () {
+                    final lines = frpcManager.logLines;
+                    if (lines.isEmpty) {
+                      snack(context, '暂无日志可复制');
+                      return;
+                    }
+                    Clipboard.setData(ClipboardData(text: lines.join('\n')));
+                    snack(context, '已复制 ${lines.length} 行日志');
+                  },
+                ),
                 TextButton.icon(
                   icon: const Icon(Icons.clear_all, size: 18),
                   label: const Text('清空'),

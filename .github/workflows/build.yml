@@ -256,6 +256,28 @@ jobs:
             echo "✅ $abi <- frpc linux/$arch ($(stat -c%s "android/app/src/main/jniLibs/$abi/libfrpc.so") bytes)"
           done
 
+      - name: Configure release signing (if secret present)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KS_KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # 有 ANDROID_KEYSTORE_BASE64 时用固定 release 密钥签名，保证各版本签名一致 → 支持覆盖升级。
+          # 未配置则跳过，build.gradle.kts 回退 debug 签名（旧行为，覆盖升级仍需先卸载）。
+          if [ -z "$KS_B64" ]; then
+            echo "⚠️ 未配置 ANDROID_KEYSTORE_BASE64，release 回退 debug 签名。"
+            exit 0
+          fi
+          printf '%s' "$KS_B64" | base64 -d > android/app/upload-keystore.jks
+          {
+            echo "storeFile=upload-keystore.jks"
+            echo "storePassword=$KS_PASS"
+            echo "keyAlias=$KS_ALIAS"
+            echo "keyPassword=$KS_KEY_PASS"
+          } > android/key.properties
+          echo "✅ 已写入 release 签名配置（$(stat -c%s android/app/upload-keystore.jks) bytes keystore）"
+
       - name: Build Android APK
         run: flutter build apk --release
 
