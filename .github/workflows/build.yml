@@ -13,21 +13,29 @@ permissions:
 jobs:
   create-release:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Create empty release
-        run: |
-          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          gh release create "v$VER" --title "v$VER" --generate-notes || true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     outputs:
       version: ${{ steps.get-ver.outputs.version }}
       tag: ${{ steps.get-ver.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve version
+        id: get-ver
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VER" >> "$GITHUB_OUTPUT"
+      - name: Create release with notes
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          # --generate-notes：自动汇总上一个 tag 到本 tag 的提交，生成「更新内容」
+          gh release create "v$VER" --title "v$VER" --generate-notes || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
     needs: create-release
     runs-on: windows-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -91,6 +99,7 @@ jobs:
   build-macos-arm64:
     needs: create-release
     runs-on: macos-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -120,9 +129,46 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  build-macos-amd64:
+    needs: create-release
+    # macos-15-intel 是 GitHub 托管的最后一个 x86_64 macOS 镜像（支持到 2027-08）；
+    # macos-latest 现指向 arm64，无法原生产出 Intel 版，故 Intel 版必须固定该标签。
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        run: bash .github/sync-version-ci.sh
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Download frpc (macOS AMD64)
+        run: |
+          FRPC_VERSION="0.71.0"
+          mkdir -p assets/frpc/macos
+          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_amd64.tar.gz" -o frpc_amd64.tar.gz
+          mkdir -p /tmp/frpc_amd64 && tar -xzf frpc_amd64.tar.gz -C /tmp/frpc_amd64
+          # 运行时（frpc_manager.dart）与 pubspec 固定读取 frpc_darwin_amd64.tar.gz，文件名须一致
+          tar -czf assets/frpc/macos/frpc_darwin_amd64.tar.gz -C /tmp/frpc_amd64/frp_${FRPC_VERSION}_darwin_amd64 frpc
+      - name: Build macOS
+        run: flutter build macos --release
+      - name: Package & Upload
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          mkdir -p dist
+          cd build/macos/Build/Products/Release
+          ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_amd64.zip"
+          cd ../../../../
+          gh release upload "v$VER" dist/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-linux-amd64:
     needs: create-release
     runs-on: ubuntu-22.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -164,6 +210,7 @@ jobs:
   build-linux-arm64:
     needs: create-release
     runs-on: ubuntu-22.04-arm
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -212,6 +259,7 @@ jobs:
   build-android:
     needs: create-release
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -295,6 +343,7 @@ jobs:
   build-ohos:
     needs: create-release
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       FLUTTER_OHOS_BRANCH: oh-3.41.9-release
       OHOS_CLI_VERSION: 26.0.0.821
@@ -572,6 +621,7 @@ jobs:
   build-openwrt:
     needs: create-release
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -666,7 +716,7 @@ jobs:
 
   # 上传构建产物到云存储并更新 manifest
   upload-and-update-manifest:
-    needs: [build-windows, build-macos-arm64, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
+    needs: [build-windows, build-macos-arm64, build-macos-amd64, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
     runs-on: ubuntu-latest
     if: always() && github.event_name != 'pull_request'
     steps:
@@ -815,22 +865,39 @@ jobs:
           # 列出 R2 app/ 目录下的所有文件
           FILES=$(aws s3 ls "s3://${R2_BUCKET}/app/" --endpoint-url "$ENDPOINT" 2>/dev/null | awk '{print $4}' || echo "")
 
+          # 本次成功产出的新版产物「类型键」集合（把版本号归一为 <VER>）。
+          # 回退策略「保最近成功版·不删」：只有当同类型的新版产物存在时，才删对应旧版；
+          # 某平台构建失败/超时 → dist 里没有它的新版 → 保留其旧版，manifest 仍指向旧版，下载不断链。
+          declare -A HAVE_NEW
+          for f in dist/*; do
+            [ -f "$f" ] || continue
+            key=$(basename "$f" | sed -E 's/[_-][0-9]+\.[0-9]+\.[0-9]+/_<VER>/')
+            HAVE_NEW["$key"]=1
+          done
+
           if [ -z "$FILES" ]; then
             echo "R2 中没有文件，无需清理"
           else
             DELETED=0
+            KEPT=0
             for FILE in $FILES; do
               # 提取文件名中的版本号（支持下划线 _1.1.6 或连字符 -1.1.6）
               if [[ "$FILE" =~ [_-]([0-9]+\.[0-9]+\.[0-9]+) ]]; then
                 FILE_VER="${BASH_REMATCH[1]}"
                 if [ "$FILE_VER" != "$VER" ]; then
-                  echo "删除旧版本: $FILE (版本 $FILE_VER)"
-                  aws s3 rm "s3://${R2_BUCKET}/app/$FILE" --endpoint-url "$ENDPOINT" 2>/dev/null || true
-                  DELETED=$((DELETED + 1))
+                  KEY=$(echo "$FILE" | sed -E 's/[_-][0-9]+\.[0-9]+\.[0-9]+/_<VER>/')
+                  if [ -n "${HAVE_NEW[$KEY]:-}" ]; then
+                    echo "删除旧版本: $FILE (版本 $FILE_VER，已有同类型新版)"
+                    aws s3 rm "s3://${R2_BUCKET}/app/$FILE" --endpoint-url "$ENDPOINT" 2>/dev/null || true
+                    DELETED=$((DELETED + 1))
+                  else
+                    echo "保留旧版本: $FILE (版本 $FILE_VER，本次该平台未产出新版)"
+                    KEPT=$((KEPT + 1))
+                  fi
                 fi
               fi
             done
-            echo "✅ 已清理 $DELETED 个旧版本文件"
+            echo "✅ R2 清理完成：删除 $DELETED 个旧版本，保留 $KEPT 个（对应平台本次未成功）"
           fi
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
