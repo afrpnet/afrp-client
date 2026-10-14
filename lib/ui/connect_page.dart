@@ -43,6 +43,22 @@ class _ConnectPageState extends State<ConnectPage> {
     }
   }
 
+  /// 重新拉取服务器列表（网站新增/调整节点后手动刷新）
+  Future<void> _refreshServers() async {
+    setState(() => _busy = true);
+    try {
+      await appState.loadServers();
+    } on ApiException catch (e) {
+      if (mounted) {
+        snack(context, e.message, error: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -52,22 +68,7 @@ class _ConnectPageState extends State<ConnectPage> {
           IconButton(
             tooltip: '刷新服务器列表',
             icon: const Icon(Icons.refresh),
-            onPressed: _busy
-                ? null
-                : () async {
-                    setState(() => _busy = true);
-                    try {
-                      await appState.loadServers();
-                    } on ApiException catch (e) {
-                      if (context.mounted) {
-                        snack(context, e.message, error: true);
-                      }
-                    } finally {
-                      if (mounted) {
-                        setState(() => _busy = false);
-                      }
-                    }
-                  },
+            onPressed: _busy ? null : _refreshServers,
           ),
         ],
       ),
@@ -110,6 +111,12 @@ class _ConnectPageState extends State<ConnectPage> {
                 const SizedBox(width: 8),
                 Text('服务器', style: Theme.of(context).textTheme.titleMedium),
                 const Spacer(),
+                IconButton(
+                  tooltip: '刷新服务器列表',
+                  icon: const Icon(Icons.refresh),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _busy ? null : _refreshServers,
+                ),
                 if (server != null) GroupBadge(server.group),
               ],
             ),
