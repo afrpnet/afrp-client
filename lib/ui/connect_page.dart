@@ -62,16 +62,7 @@ class _ConnectPageState extends State<ConnectPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('连接'),
-        actions: [
-          IconButton(
-            tooltip: '刷新服务器列表',
-            icon: const Icon(Icons.refresh),
-            onPressed: _busy ? null : _refreshServers,
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('连接')),
       body: ListenableBuilder(
         listenable: Listenable.merge([appState, frpcManager]),
         builder: (context, _) {
@@ -157,7 +148,10 @@ class _ConnectPageState extends State<ConnectPage> {
               const SizedBox(height: 8),
               Text(
                 '连接中不可切换服务器，请先断开连接。',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
               ),
             ],
             if (server != null) ...[
@@ -214,7 +208,10 @@ class _ConnectPageState extends State<ConnectPage> {
                 Text('OIDC 认证', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(10),
@@ -232,10 +229,16 @@ class _ConnectPageState extends State<ConnectPage> {
             if (user == null)
               const Text('未登录')
             else ...[
-              InfoRow('认证方式', 'OIDC（${(appState.selectedServer?.authMethod ?? 'oidc').toUpperCase()}）'),
+              InfoRow(
+                '认证方式',
+                'OIDC（${(appState.selectedServer?.authMethod ?? 'oidc').toUpperCase()}）',
+              ),
               InfoRow('用户名 (clientID)', user.username),
               InfoRow('Client Secret', hasSecret ? '•••••••••••• 已保存' : '未设置'),
-              InfoRow('Token Endpoint', tokenEndpoint.isEmpty ? '(待加载)' : tokenEndpoint),
+              InfoRow(
+                'Token Endpoint',
+                tokenEndpoint.isEmpty ? '(待加载)' : tokenEndpoint,
+              ),
               InfoRow('Audience', config?.oidcAudience ?? '(待加载)'),
               InfoRow('Scope', config?.oidcScope ?? '(待加载)'),
             ],
@@ -249,7 +252,9 @@ class _ConnectPageState extends State<ConnectPage> {
                 ),
                 child: Text(
                   '该账号未开启 OIDC 认证，无法连接，请联系管理员。',
-                  style: TextStyle(color: Theme.of(context).colorScheme.onErrorContainer),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                  ),
                 ),
               ),
             ],
@@ -265,7 +270,10 @@ class _ConnectPageState extends State<ConnectPage> {
                   user.secretSet
                       ? '服务器上已存在密钥但本机未保存。可「粘贴已有密钥」，或「一键生成新密钥」（旧密钥将立即失效）。'
                       : '尚未设置 OIDC 密钥，请「粘贴已有密钥」或「一键生成新密钥」。',
-                  style: TextStyle(fontSize: 12.5, color: Theme.of(context).colorScheme.onTertiaryContainer),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: Theme.of(context).colorScheme.onTertiaryContainer,
+                  ),
                 ),
               ),
             ],
@@ -318,12 +326,17 @@ class _ConnectPageState extends State<ConnectPage> {
               children: [
                 const Icon(Icons.route_outlined, size: 20),
                 const SizedBox(width: 8),
-                Text('隧道（${tunnels.length}）', style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  '隧道（${tunnels.length}）',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 const Spacer(),
                 TextButton.icon(
                   icon: const Icon(Icons.add, size: 18),
                   label: const Text('添加隧道'),
-                  onPressed: server == null || frpcManager.running ? null : () => _editTunnel(server, null),
+                  onPressed: server == null || frpcManager.running
+                      ? null
+                      : () => _editTunnel(server, null),
                 ),
               ],
             ),
@@ -332,7 +345,10 @@ class _ConnectPageState extends State<ConnectPage> {
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   '还没有隧道。添加后连接时会自动写入 frpc 配置，例如把本机 127.0.0.1:8080 映射到远程端口。',
-                  style: TextStyle(color: Theme.of(context).colorScheme.outline, fontSize: 13),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
+                    fontSize: 13,
+                  ),
                 ),
               )
             else ...[
@@ -341,7 +357,10 @@ class _ConnectPageState extends State<ConnectPage> {
                   padding: const EdgeInsets.only(top: 3, bottom: 2),
                   child: Text(
                     '连接中不可修改隧道，断开后可编辑或删除（修改在下次连接时生效）。',
-                    style: TextStyle(color: Theme.of(context).colorScheme.outline, fontSize: 12),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               for (var i = 0; i < tunnels.length; i++)
@@ -350,7 +369,10 @@ class _ConnectPageState extends State<ConnectPage> {
                   dense: true,
                   leading: _typeIcon(tunnels[i].type),
                   title: Text(tunnels[i].name),
-                  subtitle: Text(tunnels[i].summaryFor(server), style: const TextStyle(fontSize: 12)),
+                  subtitle: Text(
+                    tunnels[i].summaryFor(server),
+                    style: const TextStyle(fontSize: 12),
+                  ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -364,7 +386,9 @@ class _ConnectPageState extends State<ConnectPage> {
                       IconButton(
                         tooltip: '删除',
                         icon: const Icon(Icons.delete_outline, size: 20),
-                        onPressed: server == null ? null : () => _deleteTunnel(server, tunnels[i]),
+                        onPressed: server == null
+                            ? null
+                            : () => _deleteTunnel(server, tunnels[i]),
                       ),
                     ],
                   ),
@@ -400,8 +424,12 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     // tunnelsOf 每次返回新解码对象，须按名称定位（名称即 frp 代理名，需唯一）
     final tunnels = appState.tunnelsOf(server.id);
-    final i = existing == null ? -1 : tunnels.indexWhere((t) => t.name == existing.name);
-    final dup = tunnels.asMap().entries.any((e) => e.key != i && e.value.name == result.name);
+    final i = existing == null
+        ? -1
+        : tunnels.indexWhere((t) => t.name == existing.name);
+    final dup = tunnels.asMap().entries.any(
+      (e) => e.key != i && e.value.name == result.name,
+    );
     if (dup) {
       snack(context, '已存在同名隧道「${result.name}」，请换一个名称', error: true);
       return;
@@ -415,11 +443,18 @@ class _ConnectPageState extends State<ConnectPage> {
   }
 
   Future<void> _deleteTunnel(ServerInfo server, Tunnel tunnel) async {
-    final ok = await confirmDialog(context, '删除隧道', '确定删除「${tunnel.name}」吗？', okText: '删除', dangerous: true);
+    final ok = await confirmDialog(
+      context,
+      '删除隧道',
+      '确定删除「${tunnel.name}」吗？',
+      okText: '删除',
+      dangerous: true,
+    );
     if (ok != true) {
       return;
     }
-    final tunnels = appState.tunnelsOf(server.id)..removeWhere((t) => t.name == tunnel.name);
+    final tunnels = appState.tunnelsOf(server.id)
+      ..removeWhere((t) => t.name == tunnel.name);
     await appState.saveTunnels(server.id, tunnels);
   }
 
@@ -429,7 +464,9 @@ class _ConnectPageState extends State<ConnectPage> {
     final scheme = Theme.of(context).colorScheme;
     final running = frpcManager.running;
     final ok = frpcManager.connectOk;
-    final dotColor = ok ? Colors.green : (running ? Colors.orange : scheme.outline);
+    final dotColor = ok
+        ? Colors.green
+        : (running ? Colors.orange : scheme.outline);
 
     return Card(
       child: Padding(
@@ -446,7 +483,10 @@ class _ConnectPageState extends State<ConnectPage> {
                 Container(
                   width: 10,
                   height: 10,
-                  decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+                  decoration: BoxDecoration(
+                    color: dotColor,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 6),
                 Text(frpcManager.status, style: const TextStyle(fontSize: 13)),
@@ -457,13 +497,19 @@ class _ConnectPageState extends State<ConnectPage> {
               children: [
                 Expanded(
                   child: FilledButton.icon(
-                    icon: Icon(running ? Icons.stop_circle_outlined : Icons.play_circle_outline),
+                    icon: Icon(
+                      running
+                          ? Icons.stop_circle_outlined
+                          : Icons.play_circle_outline,
+                    ),
                     label: Text(running ? '断开连接' : '连接服务器'),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       backgroundColor: running ? scheme.error : null,
                     ),
-                    onPressed: server == null || !FrpcManager.frpcSupported ? null : _toggleConnect,
+                    onPressed: server == null || !FrpcManager.frpcSupported
+                        ? null
+                        : _toggleConnect,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -478,19 +524,29 @@ class _ConnectPageState extends State<ConnectPage> {
             if (!FrpcManager.frpcSupported)
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: scheme.errorContainer,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline, size: 18, color: scheme.onErrorContainer),
+                    Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: scheme.onErrorContainer,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         '当前平台暂不支持内置 frpc，Android / 鸿蒙版将在后续版本提供',
-                        style: TextStyle(fontSize: 13, color: scheme.onErrorContainer),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: scheme.onErrorContainer,
+                        ),
                       ),
                     ),
                   ],
@@ -544,7 +600,12 @@ class _ConnectPageState extends State<ConnectPage> {
     }
     final tunnels = appState.tunnelsOf(server.id);
     if (tunnels.isEmpty) {
-      final go = await confirmDialog(context, '未配置隧道', '当前没有隧道，仅验证登录连接。继续连接吗？', okText: '继续');
+      final go = await confirmDialog(
+        context,
+        '未配置隧道',
+        '当前没有隧道，仅验证登录连接。继续连接吗？',
+        okText: '继续',
+      );
       if (go != true) {
         return;
       }
@@ -675,8 +736,12 @@ class _TunnelEditDialogState extends State<TunnelEditDialog> {
     final t = widget.existing;
     _name = TextEditingController(text: t?.name ?? '');
     _localIp = TextEditingController(text: t?.localIp ?? '127.0.0.1');
-    _localPort = TextEditingController(text: t == null || t.localPort == 0 ? '' : '${t.localPort}');
-    _remotePort = TextEditingController(text: t?.remotePort == null ? '' : '${t!.remotePort}');
+    _localPort = TextEditingController(
+      text: t == null || t.localPort == 0 ? '' : '${t.localPort}',
+    );
+    _remotePort = TextEditingController(
+      text: t?.remotePort == null ? '' : '${t!.remotePort}',
+    );
     _subdomain = TextEditingController(text: t?.subdomain ?? '');
     _customDomain = TextEditingController(text: t?.customDomain ?? '');
     _secretKey = TextEditingController(text: t?.secretKey ?? '');
@@ -728,9 +793,13 @@ class _TunnelEditDialogState extends State<TunnelEditDialog> {
       Tunnel(
         name: _name.text.trim(),
         type: _type,
-        localIp: _localIp.text.trim().isEmpty ? '127.0.0.1' : _localIp.text.trim(),
+        localIp: _localIp.text.trim().isEmpty
+            ? '127.0.0.1'
+            : _localIp.text.trim(),
         localPort: int.parse(_localPort.text.trim()),
-        remotePort: _isWeb || _isP2P ? null : int.parse(_remotePort.text.trim()),
+        remotePort: _isWeb || _isP2P
+            ? null
+            : int.parse(_remotePort.text.trim()),
         subdomain: _isWeb ? _subdomain.text.trim() : '',
         customDomain: _isWeb ? _customDomain.text.trim() : '',
         secretKey: _isP2P ? _secretKey.text.trim() : '',
@@ -765,7 +834,10 @@ class _TunnelEditDialogState extends State<TunnelEditDialog> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(_typeDesc[_type] ?? '', style: Theme.of(context).textTheme.bodySmall),
+                Text(
+                  _typeDesc[_type] ?? '',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _name,
@@ -822,7 +894,8 @@ class _TunnelEditDialogState extends State<TunnelEditDialog> {
                       decoration: InputDecoration(
                         labelText: '子域名前缀',
                         hintText: '例如 abc',
-                        helperText: '将得到 ${_subdomain.text.isEmpty ? 'xxx' : _subdomain.text}.${subdomainBase(server.subdomain)} 形式的地址',
+                        helperText:
+                            '将得到 ${_subdomain.text.isEmpty ? 'xxx' : _subdomain.text}.${subdomainBase(server.subdomain)} 形式的地址',
                         border: const OutlineInputBorder(),
                       ),
                       onChanged: (_) => setState(() {}),
@@ -856,10 +929,12 @@ class _TunnelEditDialogState extends State<TunnelEditDialog> {
                       suffixIcon: IconButton(
                         tooltip: '随机生成',
                         icon: const Icon(Icons.casino_outlined, size: 20),
-                        onPressed: () => setState(() => _secretKey.text = _randomKey()),
+                        onPressed: () =>
+                            setState(() => _secretKey.text = _randomKey()),
                       ),
                     ),
-                    validator: (v) => (v ?? '').trim().isEmpty ? '请设置访问密钥' : null,
+                    validator: (v) =>
+                        (v ?? '').trim().isEmpty ? '请设置访问密钥' : null,
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -883,7 +958,10 @@ class _TunnelEditDialogState extends State<TunnelEditDialog> {
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
         FilledButton(onPressed: _submit, child: const Text('保存')),
       ],
     );
@@ -920,7 +998,11 @@ class _TomlDialogState extends State<_TomlDialog> {
         child: SingleChildScrollView(
           child: SelectableText(
             _display,
-            style: const TextStyle(fontFamily: 'Consolas', fontFamilyFallback: ['monospace'], fontSize: 12.5),
+            style: const TextStyle(
+              fontFamily: 'Consolas',
+              fontFamilyFallback: ['monospace'],
+              fontSize: 12.5,
+            ),
           ),
         ),
       ),
@@ -933,7 +1015,10 @@ class _TomlDialogState extends State<_TomlDialog> {
           onPressed: () => copyText(context, widget.toml, label: '配置'),
           child: const Text('复制完整配置'),
         ),
-        FilledButton(onPressed: () => Navigator.pop(context), child: const Text('关闭')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('关闭'),
+        ),
       ],
     );
   }
@@ -982,7 +1067,10 @@ class _LogViewState extends State<_LogView> {
       ),
       child: lines.isEmpty
           ? Center(
-              child: Text('暂无日志', style: TextStyle(color: scheme.outline, fontSize: 13)),
+              child: Text(
+                '暂无日志',
+                style: TextStyle(color: scheme.outline, fontSize: 13),
+              ),
             )
           : Scrollbar(
               controller: _controller,
@@ -993,7 +1081,9 @@ class _LogViewState extends State<_LogView> {
                   final line = lines[i];
                   final l = line.toLowerCase();
                   Color? color;
-                  if (l.contains('error') || l.contains('failed') || l.contains('panic')) {
+                  if (l.contains('error') ||
+                      l.contains('failed') ||
+                      l.contains('panic')) {
                     color = scheme.error;
                   } else if (l.contains('success')) {
                     color = Colors.green.shade700;
