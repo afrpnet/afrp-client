@@ -295,11 +295,19 @@ jobs:
   build-ohos:
     needs: create-release
     runs-on: ubuntu-latest
+    env:
+      FLUTTER_OHOS_BRANCH: oh-3.41.9-release
+      OHOS_CLI_VERSION: 26.0.0.821
     steps:
       - uses: actions/checkout@v4
 
       - name: Sync version from tag
         run: bash .github/sync-version-ci.sh
+
+      - name: Install Linux deps (libgl1)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -312,12 +320,66 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install flutter-ohos toolchain
+      # hvigorw 优先用 NODE_HOME/bin/node。HarmonyOS command-line-tools 自带 Node >=20.11，
+      # 会触发 hvigor 内置 pnpm 8.x 的 ERR_INVALID_THIS(URLSearchParams) bug（@ohos 包只在
+      # repo.harmonyos.com，无法换源）。这里先在 setup-ohos 污染 PATH 之前记住 Node 18 目录，
+      # Build 步骤再显式把 NODE_HOME/PATH 指回 Node 18，让 hvigor 用 18 跑绕开该 bug。
+      - name: Capture Node 18 home
         run: |
-          git clone --depth 1 https://atomgit.com/CPF-Flutter/flutter_flutter.git -b oh-3.44.9-dev ~/flutter-ohos
+          NODE18_BIN=$(readlink -f "$(which node)")
+          NODE18_HOME=$(dirname "$(dirname "$NODE18_BIN")")
+          echo "NODE18_HOME=$NODE18_HOME" >> "$GITHUB_ENV"
+          echo "=== node18 home=$NODE18_HOME ==="
+          "$NODE18_HOME/bin/node" -v
+
+      - name: Setup HarmonyOS CLI tools + SDK (API 26)
+        uses: ErBWs/setup-ohos@v2
+        with:
+          version: ${{ env.OHOS_CLI_VERSION }}
+          cache: true
+
+      - name: Prepare FLAT SDK layout + patch component metaVersion
+        run: |
+          set -e
+          echo "HOS_SDK_HOME=$HOS_SDK_HOME"
+          echo "OHOS_NDK_HOME=$OHOS_NDK_HOME"
+          # 提前建 FLAT_SDK：<sdk>/26/{ets,js,native,previewer,toolchains} + 26/sdk-pkg.json 标记，
+          # 复刻本地 D:\dev\harmony-sdk\26\ 布局。必须在 Clone 步骤前，好让 flutter config
+          # --ohos-sdk 指向它，从而 flutter 回写 local.properties 时 hwsdk.dir 也是 FLAT_SDK
+          # （否则 hwsdk.dir 被写成原生 default/openharmony 布局，hvigor 从中解析不到 ArkTS:26）。
+          FLAT_SDK="$HOME/ohos-sdk-flat"
+          rm -rf "$FLAT_SDK"
+          mkdir -p "$FLAT_SDK/26"
+          for c in ets js native previewer toolchains; do
+            ln -sfn "$OHOS_NDK_HOME/$c" "$FLAT_SDK/26/$c"
+          done
+          printf '{\n  "data": {\n    "apiVersion": "26"\n  }\n}\n' > "$FLAT_SDK/26/sdk-pkg.json"
+          # 根因（run 38495733660 验证）：setup-ohos 装的 SDK 组件元数据是 metaVersion 3.0.2，
+          # 而 flutter-ohos fork 锁定的 hvigor 5.19.8 解析不了 3.0.2 → 报 "Unable to find components"。
+          # 本地能跑通的 SDK 5 个组件全是 metaVersion 3.0.0。把真实组件文件（FLAT 软链指向它们）
+          # 的 metaVersion 统一降回 3.0.0，仅改这一个字段，version 等其余保留原值。仅影响本次 CI。
+          for c in ets js native previewer toolchains; do
+            f="$OHOS_NDK_HOME/$c/oh-uni-package.json"
+            [ -f "$f" ] || continue
+            sed -i 's/"metaVersion"[[:space:]]*:[[:space:]]*"[^"]*"/"metaVersion": "3.0.0"/' "$f"
+          done
+          echo "=== FLAT_SDK/26 ==="
+          ls -la "$FLAT_SDK/26"
+          echo "FLAT_SDK=$FLAT_SDK" >> "$GITHUB_ENV"
+
+      - name: Clone flutter-ohos fork (full clone, with tags)
+        run: |
+          set -e
+          git clone https://gitcode.com/openharmony-sig/flutter_flutter.git -b "$FLUTTER_OHOS_BRANCH" "$HOME/flutter-ohos"
           export PATH="$HOME/flutter-ohos/bin:$PATH"
-          flutter precache
+          echo "=== git describe ==="
+          git -C "$HOME/flutter-ohos" describe --tags || echo "(describe failed)"
           flutter config --no-analytics
+          # 指向 FLAT_SDK（带 26/ api 层），flutter 会把它持久化并回写 local.properties 的
+          # hwsdk.dir；若指原生 $HOS_SDK_HOME（default/openharmony 无 api 层）hvigor 找不到 ArkTS:26。
+          flutter config --ohos-sdk "$FLAT_SDK" || true
+          echo "=== flutter --version ==="
+          flutter --version || true
 
       - name: Prepare assets for mobile build
         run: |
@@ -327,25 +389,152 @@ jobs:
           done
           sed -i -E 's@^([[:space:]]*-[[:space:]]+assets/frpc/(windows|linux|macos)/.*)$@#\1@' pubspec.yaml
 
-      - name: Generate OHOS platform and build HAP
+      - name: Write ohos/local.properties
         run: |
+          {
+            echo "sdk.dir=$FLAT_SDK"
+            echo "hwsdk.dir=$FLAT_SDK"
+            echo "nodejs.dir=$NODE18_HOME"
+            echo "flutter.sdk=$HOME/flutter-ohos"
+          } > ohos/local.properties
+          echo "=== local.properties ==="
+          cat ohos/local.properties
+
+      - name: Configure npm registry (~/.npmrc)
+        run: |
+          # hvigor 安装阶段会读取 $HOME/.npmrc，缺失会 ENOENT 直接失败
+          cat > "$HOME/.npmrc" <<'EOF'
+          registry=https://registry.npmmirror.com/
+          @ohos:registry=https://repo.harmonyos.com/npm/
+          EOF
+          sed -i 's/^[[:space:]]*//' "$HOME/.npmrc"
+          cat "$HOME/.npmrc"
+
+      - name: Build HAP (debug)
+        run: |
+          set -e
           export PATH="$HOME/flutter-ohos/bin:$PATH"
-          rm -rf ohos
-          flutter create --platforms ohos .
-          flutter build hap --debug
+          export DEVECO_SDK_HOME="$FLAT_SDK"
+          export OHOS_BASE_SDK_HOME="$FLAT_SDK"
+          # 强制 hvigor 用 Node 18（绕开 command-line-tools 自带 Node>=20.11 触发的 pnpm ERR_INVALID_THIS）
+          export NODE_HOME="$NODE18_HOME"
+          export PATH="$NODE_HOME/bin:$PATH"
+          # hvigor 优先读 env 里的 SDK 路径（而非 local.properties），统一指到 FLAT。
+          export HOS_SDK_HOME="$FLAT_SDK"
+          export OHOS_SDK_HOME="$FLAT_SDK"
+          node -v
+          echo "=== flutter pub get ==="
+          flutter pub get
+          # flutter-ohos 的 hvigorw 需要 hvigor-config.json5 里的 hvigorVersion 字段来选引擎版本，
+          # 但原版 npm @ohos/hvigor 的 res/hvigor-config-schema.json 的 propertyNames.enum 不含该字段 →
+          # PreBuild 阶段 "00303038 Schema validate failed, propertyName: hvigorVersion"。这里复刻本地补丁：
+          # 先触发一次安装（校验会失败，忽略），再给装好的 schema 注入 hvigorVersion。
+          echo "=== pre-install hvigor (trigger download; schema validation may fail, ignored) ==="
+          ( cd ohos && bash hvigorw clean --no-daemon -p product=default ) || true
+          cat > /tmp/patch-hvigor-schema.js <<'EOF'
+          const fs = require('fs');
+          const p = process.argv[2];
+          let s;
+          try { s = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) { console.error('skip (parse fail): ' + p); process.exit(0); }
+          let changed = false;
+          if (s.propertyNames && Array.isArray(s.propertyNames.enum) && !s.propertyNames.enum.includes('hvigorVersion')) {
+            s.propertyNames.enum.unshift('hvigorVersion'); changed = true;
+          }
+          s.properties = s.properties || {};
+          if (!s.properties.hvigorVersion) { s.properties.hvigorVersion = { type: 'string' }; changed = true; }
+          if (changed) {
+            try { fs.chmodSync(p, 0o644); } catch (e) {}
+            fs.writeFileSync(p, JSON.stringify(s, null, 2));
+            console.log('patched: ' + p);
+          } else { console.log('already ok: ' + p); }
+          EOF
+          echo "=== patch installed hvigor-config-schema.json to allow hvigorVersion ==="
+          find "$HOME/.hvigor" "$(pwd)/ohos" -path '*@ohos/hvigor/res/hvigor-config-schema.json' 2>/dev/null | while read -r SCHEMA; do
+            chmod u+w "$SCHEMA" 2>/dev/null || true
+            node /tmp/patch-hvigor-schema.js "$SCHEMA"
+          done
+          echo "=== flutter build hap --debug ==="
+          # hvigor 无可用 signingConfig 时会优雅跳过签名、产出 UNSIGNED hap，assembleHap 成功；
+          # 但 flutter_tools 事后找不到已签名 hap 会打印“请通过 DevEco 配置调试签名”并 exit 1。
+          # CI 无 DevEco，故这里容忍该退出码，改由下一步用 SDK 自带材料手工 sign-app。
+          flutter build hap --debug || echo "!! flutter_tools 签名门退出（CI 预期，稍后手工签名）"
+          echo "=== locate unsigned hap ==="
+          find . -name '*.hap' -type f 2>/dev/null | grep -v oh_modules | xargs -r ls -la || true
+
+      - name: Sign HAP with OpenHarmony SDK material (local self-sign)
+        run: |
+          set -e
+          REPO="$(pwd)"
+          TC="$OHOS_NDK_HOME/toolchains/lib"
+          ST="$TC/hap-sign-tool.jar"
+          [ -f "$ST" ] || { echo "!! hap-sign-tool.jar 不在 $TC"; ls -la "$TC" 2>/dev/null || true; exit 1; }
+          # 用 SDK 自带的 OpenHarmony CA 材料在 CI 内自签：新建 app 密钥→CSR→CA 签出证书链→
+          # 写进 release profile 模板→sign-profile→sign-app。产出本地签名 HAP（开发者模式/模拟器可装，
+          # 不能上架正式分发；正式分发需华为 AGC 证书）。全部口令 123456（OpenHarmony.p12 默认）。
+          BUNDLE=$(node -e 'const fs=require("fs");const s=fs.readFileSync(process.argv[1],"utf8");const m=s.match(/bundleName"?\s*:\s*"([^"]+)"/);console.log(m?m[1]:"")' "$REPO/ohos/AppScope/app.json5")
+          echo "BUNDLE=$BUNDLE"
+          [ -n "$BUNDLE" ] || { echo "!! 读不到 bundleName"; exit 1; }
+          W="$HOME/ohsign"; rm -rf "$W"; mkdir -p "$W"; cd "$W"
+          NOW=$(date +%s); AFTER=$((NOW + 315360000))
+          ISSUER_CA="C=CN,O=OpenHarmony,OU=OpenHarmony Team,CN=OpenHarmony Application CA"
+          SUBJ="C=CN,O=OpenHarmony,OU=OpenHarmony Team,CN=OpenHarmony Application Release"
+          echo "=== 1) app keypair ==="
+          java -jar "$ST" generate-keypair -keyAlias "afrp_app" -keyPwd 123456 -keyAlg ECC -keySize NIST-P-256 -keystoreFile app.p12 -keystorePwd 123456
+          echo "=== 2) csr ==="
+          java -jar "$ST" generate-csr -keyAlias "afrp_app" -keyPwd 123456 -subject "$SUBJ" -signAlg SHA256withECDSA -keystoreFile app.p12 -keystorePwd 123456 -outFile app.csr
+          echo "=== export CA + root certs ==="
+          keytool -exportcert -rfc -alias "openharmony application ca" -keystore "$TC/OpenHarmony.p12" -storepass 123456 -file subca.cer
+          keytool -exportcert -rfc -alias "openharmony application root ca" -keystore "$TC/OpenHarmony.p12" -storepass 123456 -file rootca.cer
+          echo "=== 3) app cert chain (signed by Application CA) ==="
+          java -jar "$ST" generate-app-cert -keyAlias "afrp_app" -keyPwd 123456 -issuer "$ISSUER_CA" -issuerKeyAlias "openharmony application ca" -issuerKeyPwd 123456 -subject "$SUBJ" -validity 3650 -signAlg SHA256withECDSA -rootCaCertFile rootca.cer -subCaCertFile subca.cer -keystoreFile app.p12 -keystorePwd 123456 -issuerKeystoreFile "$TC/OpenHarmony.p12" -issuerKeystorePwd 123456 -outForm certChain -outFile appchain.cer
+          echo "appchain certs: $(grep -c 'BEGIN CERT' appchain.cer)"
+          echo "=== 4) build profile.json (embed leaf cert + bundle-name + fresh validity) ==="
+          node -e '
+            const fs = require("fs");
+            const chain = fs.readFileSync("appchain.cer", "utf8");
+            const leaf = chain.match(/-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/)[0].trim();
+            const p = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+            p["bundle-info"]["bundle-name"] = process.argv[4];
+            p["bundle-info"]["distribution-certificate"] = leaf + "\n";
+            p.validity["not-before"] = Number(process.argv[1]);
+            p.validity["not-after"] = Number(process.argv[2]);
+            fs.writeFileSync("profile.json", JSON.stringify(p, null, 4));
+            console.log("profile.json bundle=" + p["bundle-info"]["bundle-name"]);
+          ' "$NOW" "$AFTER" "$TC/UnsgnedReleasedProfileTemplate.json" "$BUNDLE"
+          echo "=== 5) sign-profile ==="
+          java -jar "$ST" sign-profile -mode localSign -keyAlias "openharmony application profile release" -keyPwd 123456 -profileCertFile "$TC/OpenHarmonyProfileRelease.pem" -inFile profile.json -signAlg SHA256withECDSA -keystoreFile "$TC/OpenHarmony.p12" -keystorePwd 123456 -outFile release.p7b
+          echo "=== locate unsigned hap ==="
+          UNSIGNED=$(find "$REPO" -name '*unsigned*.hap' -type f 2>/dev/null | grep -v oh_modules | head -1)
+          [ -n "$UNSIGNED" ] || UNSIGNED=$(find "$REPO" -name '*.hap' -type f 2>/dev/null | grep -v oh_modules | grep -v "$W" | head -1)
+          echo "UNSIGNED=$UNSIGNED"
+          [ -n "$UNSIGNED" ] || { echo "!! 找不到未签名 hap"; exit 1; }
+          mkdir -p "$REPO/build/ohos/outputs"
+          SIGNED="$REPO/build/ohos/outputs/afrp-oidc-client-ohos-arm64.hap"
+          echo "=== 6) sign-app ==="
+          java -jar "$ST" sign-app -mode localSign -keyAlias "afrp_app" -keyPwd 123456 -appCertFile appchain.cer -profileFile release.p7b -profileSigned 1 -inFile "$UNSIGNED" -signAlg SHA256withECDSA -keystoreFile app.p12 -keystorePwd 123456 -outFile "$SIGNED" -compatibleVersion 26 -signCode 1
+          echo "=== signed hap ==="
+          ls -la "$SIGNED"
+
+      - name: Upload HAP artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ohos-hap
+          path: |
+            build/ohos/**/*.hap
+          if-no-files-found: warn
 
       - name: Upload HAP to Release
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           mkdir -p dist
-          HAP_FILE=$(find build/ohos -name "*.hap" -type f | head -1)
-          if [ -n "$HAP_FILE" ]; then
-            cp "$HAP_FILE" "dist/afrp-oidc-client_${VER}_ohos_arm64.hap"
-            echo "=== Uploading ==="
+          SIGNED="build/ohos/outputs/afrp-oidc-client-ohos-arm64.hap"
+          if [ -f "$SIGNED" ]; then
+            cp "$SIGNED" "dist/afrp-oidc-client_${VER}_ohos_arm64.hap"
             ls -la dist/
             gh release upload "v$VER" dist/* --clobber
           else
-            echo "ERROR: HAP file not found"
+            echo "ERROR: signed HAP not found"
             find build/ohos -type f -name "*.hap" || true
             exit 1
           fi

@@ -50,4 +50,14 @@ if [ -f openwrt/luci-app-afrp/Makefile ]; then
   mv openwrt/luci-app-afrp/Makefile.tmp openwrt/luci-app-afrp/Makefile
 fi
 
+# ohos/AppScope/app.json5 (versionName + versionCode=主*1000000+次*1000+修订)
+if [ -f ohos/AppScope/app.json5 ]; then
+  MAJOR=$(echo "$VER" | cut -d. -f1); MINOR=$(echo "$VER" | cut -d. -f2); PATCH=$(echo "$VER" | cut -d. -f3)
+  VCODE=$(( MAJOR * 1000000 + MINOR * 1000 + PATCH ))
+  sed -E "s/\"versionCode\"[[:space:]]*:[[:space:]]*[0-9]+/\"versionCode\": ${VCODE}/" ohos/AppScope/app.json5 > ohos/AppScope/app.json5.tmp
+  mv ohos/AppScope/app.json5.tmp ohos/AppScope/app.json5
+  sed -E "s/\"versionName\"[[:space:]]*:[[:space:]]*\"[^\"]*\"/\"versionName\": \"${VER}\"/" ohos/AppScope/app.json5 > ohos/AppScope/app.json5.tmp
+  mv ohos/AppScope/app.json5.tmp ohos/AppScope/app.json5
+fi
+
 echo "✅ 版本已同步: $VER"
