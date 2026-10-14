@@ -9,13 +9,16 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
 import '../core/updater.dart';
+import 'oidc_proxy.dart';
 
 /// frpc 进程管理：运行前从 App 资源释放二进制到可写目录，
 /// 启动/停止进程，并把 stdout/stderr 作为日志行提供给 UI。
 class FrpcManager extends ChangeNotifier {
   static const String frpcVersion = '0.71.0';
   static const int _maxLogLines = 800;
-  static const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
+  static const MethodChannel _installerChannel = MethodChannel(
+    'afrp_oidc/installer',
+  );
 
   Process? _proc;
   String? _binPath;
@@ -35,11 +38,15 @@ class FrpcManager extends ChangeNotifier {
 
   /// 当前平台是否支持内置 frpc（桌面端 + 移动端都支持）
   static bool get frpcSupported {
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS || Platform.isAndroid) {
+    if (Platform.isWindows ||
+        Platform.isLinux ||
+        Platform.isMacOS ||
+        Platform.isAndroid) {
       return true;
     }
     // 鸿蒙 OHOS
-    if (Platform.operatingSystem == 'ohos' || Platform.operatingSystem.contains('harmony')) {
+    if (Platform.operatingSystem == 'ohos' ||
+        Platform.operatingSystem.contains('harmony')) {
       return true;
     }
     return false;
@@ -60,7 +67,8 @@ class FrpcManager extends ChangeNotifier {
       return ('', 'frpc'); // Android 需要动态下载
     }
     // 鸿蒙 OHOS
-    if (Platform.operatingSystem == 'ohos' || Platform.operatingSystem.contains('harmony')) {
+    if (Platform.operatingSystem == 'ohos' ||
+        Platform.operatingSystem.contains('harmony')) {
       return ('', 'frpc'); // OHOS 需要动态下载
     }
     throw UnsupportedError('当前平台暂不支持内置 frpc');
@@ -100,7 +108,8 @@ class FrpcManager extends ChangeNotifier {
     }
 
     // Android / OHOS 需要动态下载 frpc
-    final isMobile = Platform.isAndroid ||
+    final isMobile =
+        Platform.isAndroid ||
         Platform.operatingSystem == 'ohos' ||
         Platform.operatingSystem.contains('harmony');
     if (isMobile) {
@@ -108,7 +117,10 @@ class FrpcManager extends ChangeNotifier {
     }
 
     final data = await rootBundle.load(assetKey);
-    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
     if (assetKey.endsWith('.tar.gz')) {
       final tar = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
       final entry = tar.files.firstWhere(
@@ -132,7 +144,9 @@ class FrpcManager extends ChangeNotifier {
   /// Android：返回 APK 内置 frpc（nativeLibraryDir/libfrpc.so）的可执行路径。
   /// 该目录由系统在安装时解压，只读且带执行权限，可直接 exec。
   Future<String> _androidBundledFrpc() async {
-    final dir = await _installerChannel.invokeMethod<String>('nativeLibraryDir');
+    final dir = await _installerChannel.invokeMethod<String>(
+      'nativeLibraryDir',
+    );
     if (dir == null || dir.isEmpty) {
       throw StateError('无法获取 nativeLibraryDir');
     }
@@ -144,14 +158,19 @@ class FrpcManager extends ChangeNotifier {
   }
 
   /// Android / OHOS 平台：从 manifest 下载 frpc 二进制
-  Future<String> _downloadFrpcForMobile(File bin, File marker, String exeName) async {
+  Future<String> _downloadFrpcForMobile(
+    File bin,
+    File marker,
+    String exeName,
+  ) async {
     try {
       // 获取设备架构
       String arch;
       final os = Platform.operatingSystem;
       final isOhos = os == 'ohos' || os.contains('harmony');
 
-      if (Platform.version.contains('arm64') || Platform.version.contains('aarch64')) {
+      if (Platform.version.contains('arm64') ||
+          Platform.version.contains('aarch64')) {
         arch = 'arm64';
       } else if (Platform.version.contains('arm')) {
         arch = 'arm';
@@ -162,7 +181,9 @@ class FrpcManager extends ChangeNotifier {
       // 从网站获取 manifest
       final client = http.Client();
       try {
-        final manifestUrl = Uri.parse('https://www.afrp.net/download/manifest.json');
+        final manifestUrl = Uri.parse(
+          'https://www.afrp.net/download/manifest.json',
+        );
         final response = await client.get(manifestUrl);
         if (response.statusCode != 200) {
           throw StateError('无法下载 manifest (HTTP ${response.statusCode})');
@@ -172,7 +193,12 @@ class FrpcManager extends ChangeNotifier {
         final manifest = UpdateManifest.fromJson(manifestJson);
 
         // Android/OHOS 都使用 Linux 二进制（manifest 中只有 linux 平台）
-        final entry = chooseEntry(manifest, kind: 'frpc', platform: 'linux', arch: arch);
+        final entry = chooseEntry(
+          manifest,
+          kind: 'frpc',
+          platform: 'linux',
+          arch: arch,
+        );
         if (entry == null) {
           throw StateError('未找到适用于 $arch 架构的 frpc');
         }
@@ -183,7 +209,9 @@ class FrpcManager extends ChangeNotifier {
         // 如果是 tar.gz，需要解压
         if (entry.file.endsWith('.tar.gz')) {
           final bytes = tempFile.readAsBytesSync();
-          final tar = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
+          final tar = TarDecoder().decodeBytes(
+            GZipDecoder().decodeBytes(bytes),
+          );
           final frpcEntry = tar.files.firstWhere(
             (f) => f.isFile && f.name.contains('frpc'),
             orElse: () => throw StateError('压缩包中未找到 frpc'),
@@ -212,7 +240,9 @@ class FrpcManager extends ChangeNotifier {
     try {
       final dir = await _workDir();
       final marker = File('${dir.path}${Platform.pathSeparator}.version');
-      _installedVersion = marker.existsSync() ? marker.readAsStringSync().trim() : frpcVersion;
+      _installedVersion = marker.existsSync()
+          ? marker.readAsStringSync().trim()
+          : frpcVersion;
     } catch (_) {
       _installedVersion = frpcVersion;
     }
@@ -223,7 +253,9 @@ class FrpcManager extends ChangeNotifier {
   /// 用新下载并校验过的二进制替换当前 frpc（先停止进程），并更新版本标记
   Future<void> applyUpdate(File newBinary, String version) async {
     if (Platform.isAndroid) {
-      throw StateError('Android 上 frpc 随 App 打包（nativeLibraryDir），不支持单独更新；请升级 App 版本');
+      throw StateError(
+        'Android 上 frpc 随 App 打包（nativeLibraryDir），不支持单独更新；请升级 App 版本',
+      );
     }
     await stop();
     final (_, exeName) = _platformAsset;
@@ -249,22 +281,33 @@ class FrpcManager extends ChangeNotifier {
     await stop();
     final binPath = await ensureBinary();
     final dir = await _workDir();
+
+    // Android / 鸿蒙：frpc 解析不了 OIDC token 端点域名，改走本地回环代理转发
+    if (_needsOidcProxy) {
+      tomlContent = await _routeOidcViaLocalProxy(tomlContent);
+    }
+
     final cfg = File('${dir.path}${Platform.pathSeparator}frpc.toml');
     cfg.writeAsStringSync(tomlContent, flush: true);
 
     logLines.clear();
     _connectOk = false;
     _setStatus('正在启动…');
-    final proc = await Process.start(
-      binPath,
-      ['-c', cfg.path],
-      workingDirectory: dir.path,
-    );
+    final proc = await Process.start(binPath, [
+      '-c',
+      cfg.path,
+    ], workingDirectory: dir.path);
     _proc = proc;
     notifyListeners();
 
-    proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen(_onLine);
-    proc.stderr.transform(utf8.decoder).transform(const LineSplitter()).listen(_onLine);
+    proc.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(_onLine);
+    proc.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(_onLine);
     proc.exitCode.then((code) {
       _proc = null;
       _connectOk = false;
@@ -273,7 +316,37 @@ class FrpcManager extends ChangeNotifier {
     });
   }
 
+  /// Android / 鸿蒙的 frpc 为纯 Go linux 二进制，无系统 DNS，需本地代理转发 OIDC token 请求
+  static bool get _needsOidcProxy {
+    final os = Platform.operatingSystem;
+    return Platform.isAndroid || os == 'ohos' || os.contains('harmony');
+  }
+
+  /// 从 toml 中取出真实 tokenEndpointURL，启动本地回环代理并替换为 `http://127.0.0.1:<port>`。
+  /// 解析失败或代理启动失败时原样返回（不阻断连接，frpc 会自行重试）。
+  Future<String> _routeOidcViaLocalProxy(String toml) async {
+    final m = RegExp(
+      r'auth\.oidc\.tokenEndpointURL\s*=\s*"([^"]*)"',
+    ).firstMatch(toml);
+    final real = m?.group(1);
+    if (real == null || real.isEmpty) {
+      return toml;
+    }
+    try {
+      final local = await oidcProxy.start(real);
+      return toml.replaceRange(
+        m!.start,
+        m.end,
+        'auth.oidc.tokenEndpointURL = "$local"',
+      );
+    } catch (e) {
+      _addLog('[OIDC 本地代理启动失败，回退直连：$e]');
+      return toml;
+    }
+  }
+
   Future<void> stop() async {
+    await oidcProxy.stop();
     final proc = _proc;
     if (proc == null) {
       return;
