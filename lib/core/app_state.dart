@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
+import 'autostart.dart';
 import 'models.dart';
 import 'secret_store.dart';
 
@@ -11,7 +12,7 @@ import 'secret_store.dart';
 /// 全部网络请求经由本类，UI 通过 ListenableBuilder 监听刷新。
 class AppState extends ChangeNotifier {
   AppState({SecretStore secretStore = const PlatformSecretStore()})
-      : _secrets = secretStore;
+    : _secrets = secretStore;
 
   static const String defaultBaseUrl = 'https://www.afrp.net';
 
@@ -95,7 +96,11 @@ class AppState extends ChangeNotifier {
   /* ==================== 登录 / 登出 ==================== */
 
   /// 登录成功返回 null；失败返回错误消息
-  Future<String?> login(String identity, String password, {String device = ''}) async {
+  Future<String?> login(
+    String identity,
+    String password, {
+    String device = '',
+  }) async {
     try {
       final data = await api.post('/api/login.php', {
         'identity': identity,
@@ -264,7 +269,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markMessageRead(int id) async {
-    final data = await api.post('/api/messages.php', {'action': 'read', 'id': id});
+    final data = await api.post('/api/messages.php', {
+      'action': 'read',
+      'id': id,
+    });
     unreadCount = (data['unread'] as num?)?.toInt() ?? unreadCount;
     for (var i = 0; i < messages.length; i++) {
       final m = messages[i];
@@ -296,13 +304,20 @@ class AppState extends ChangeNotifier {
 
   /* ==================== 订单 ==================== */
 
-  Future<OrderInfo> loadOrderStatus({int? orderId, String? orderNo, bool auto = false}) async {
-    final data = await api.get('/api/orders.php', query: {
-      'action': 'status',
-      'no': ?orderNo,
-      'id': ?orderId?.toString(),
-      if (auto) 'auto': '1',
-    });
+  Future<OrderInfo> loadOrderStatus({
+    int? orderId,
+    String? orderNo,
+    bool auto = false,
+  }) async {
+    final data = await api.get(
+      '/api/orders.php',
+      query: {
+        'action': 'status',
+        'no': ?orderNo,
+        'id': ?orderId?.toString(),
+        if (auto) 'auto': '1',
+      },
+    );
     final o = OrderInfo.fromJson(data['order'] as Map<String, dynamic>);
     if (data['user'] is Map<String, dynamic>) {
       user = UserInfo.fromJson(data['user'] as Map<String, dynamic>);
@@ -315,7 +330,10 @@ class AppState extends ChangeNotifier {
   }
 
   /// 创建订单并返回 (订单, 支付指引)
-  Future<(OrderInfo, PayInstruction)> createOrder(int planId, String payMethod) async {
+  Future<(OrderInfo, PayInstruction)> createOrder(
+    int planId,
+    String payMethod,
+  ) async {
     final data = await api.post('/api/orders.php', {
       'action': 'create',
       'plan_id': planId,
@@ -332,7 +350,10 @@ class AppState extends ChangeNotifier {
 
   /// 对待支付订单重新发起支付
   Future<(OrderInfo, PayInstruction)> startPay(int orderId) async {
-    final data = await api.post('/api/orders.php', {'action': 'pay', 'id': orderId});
+    final data = await api.post('/api/orders.php', {
+      'action': 'pay',
+      'id': orderId,
+    });
     final o = OrderInfo.fromJson(data['order'] as Map<String, dynamic>);
     final pay = data['pay'] is Map<String, dynamic>
         ? PayInstruction.fromJson(data['pay'] as Map<String, dynamic>)
@@ -425,6 +446,21 @@ class AppState extends ChangeNotifier {
     autoConnectOnLaunch = v;
     await _prefs?.setBool(_kAutoConnect, v);
     notifyListeners();
+  }
+
+  static const _kAutostartInit = 'boot_autostart_initialized';
+
+  /// 首次运行时默认开启开机自启（仅执行一次；之后完全以用户在设置页的手动开关为准，
+  /// 不再强制回写，避免用户关掉后每次启动又被打开）。
+  Future<void> ensureBootAutostartDefault() async {
+    if (!bootAutostartSupported) {
+      return;
+    }
+    if (_prefs?.getBool(_kAutostartInit) ?? false) {
+      return;
+    }
+    await setBootAutostart(true);
+    await _prefs?.setBool(_kAutostartInit, true);
   }
 }
 

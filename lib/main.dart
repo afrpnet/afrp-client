@@ -39,6 +39,7 @@ class _FrpAppState extends State<FrpApp> {
   void initState() {
     super.initState();
     appState.init().then((_) async {
+      await appState.ensureBootAutostartDefault();
       await frpcManager.refreshInstalledVersion();
       if (appState.autoConnectOnLaunch) {
         await autoConnectFrpc();
@@ -86,7 +87,9 @@ class _FrpAppState extends State<FrpApp> {
       return;
     }
     _windowTitle = title;
-    WidgetsBinding.instance.addPostFrameCallback((_) => TrayService.instance.setTitle(title));
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => TrayService.instance.setTitle(title),
+    );
   }
 
   @override
@@ -101,7 +104,9 @@ class _FrpAppState extends State<FrpApp> {
           debugShowCheckedModeBanner: false,
           navigatorKey: appNavigatorKey,
           theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1565C0)),
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFF1565C0),
+            ),
             useMaterial3: true,
           ),
           locale: const Locale('zh', 'CN'),
@@ -112,12 +117,10 @@ class _FrpAppState extends State<FrpApp> {
             GlobalCupertinoLocalizations.delegate,
           ],
           home: !appState.booted
-              ? const Scaffold(
-                  body: Center(child: CircularProgressIndicator()),
-                )
+              ? const Scaffold(body: Center(child: CircularProgressIndicator()))
               : appState.loggedIn
-                  ? const HomeShell()
-                  : const LoginPage(),
+              ? const HomeShell()
+              : const LoginPage(),
         );
       },
     );
