@@ -858,19 +858,26 @@ Future<void> _runInstallerAndRestart(File installer, String exePath) async {
   final currentPid = pid;
   await bat.writeAsString('''
 @echo off
-timeout /t 2 /nobreak >nul
+set /a WAITED=0
 :waitloop
 tasklist /fi "PID eq $currentPid" 2>nul | find "$currentPid" >nul
-if not errorlevel 1 (
+if errorlevel 1 goto proceed
+rem 最多等 30 秒；旧进程仍不退出则强杀，避免等待循环无限挂起（关不掉的 CMD 窗口）
+if %WAITED% GEQ 30 (
+  taskkill /pid $currentPid /f >nul 2>&1
   timeout /t 1 /nobreak >nul
-  goto waitloop
+  goto proceed
 )
+timeout /t 1 /nobreak >nul
+set /a WAITED+=1
+goto waitloop
+:proceed
 "${installer.path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS
 timeout /t 2 /nobreak >nul
 start "" "$exePath"
 del "%~f0"
 ''', flush: true);
-  await Process.start('cmd', ['/c', bat.path], mode: ProcessStartMode.detached);
+  await _startHiddenBat(bat);
 }
 
 /// Windows 免安装版：临时 bat 等本进程退出后覆盖文件并重启
@@ -883,19 +890,35 @@ Future<void> _replacePortableAndRestart(File newBinary) async {
   final currentPid = pid;
   await bat.writeAsString('''
 @echo off
-timeout /t 2 /nobreak >nul
+set /a WAITED=0
 :waitloop
 tasklist /fi "PID eq $currentPid" 2>nul | find "$currentPid" >nul
-if not errorlevel 1 (
+if errorlevel 1 goto proceed
+rem 最多等 30 秒；旧进程仍不退出则强杀，避免等待循环无限挂起（关不掉的 CMD 窗口）
+if %WAITED% GEQ 30 (
+  taskkill /pid $currentPid /f >nul 2>&1
   timeout /t 1 /nobreak >nul
-  goto waitloop
+  goto proceed
 )
+timeout /t 1 /nobreak >nul
+set /a WAITED+=1
+goto waitloop
+:proceed
 copy /y "${newBinary.path}" "${current.path}" >nul
 start "" "${current.path}"
 del "%~f0"
 ''', flush: true);
-  await Process.start('cmd', ['/c', bat.path], mode: ProcessStartMode.detached);
+  await _startHiddenBat(bat);
   exit(0);
+}
+
+/// 以最小化、脱离父进程的方式启动更新 bat，避免弹出抢占焦点的 CMD 窗口
+Future<void> _startHiddenBat(File bat) async {
+  await Process.start(
+    'cmd',
+    ['/c', 'start', '""', '/min', 'cmd', '/c', bat.path],
+    mode: ProcessStartMode.detached,
+  );
 }
 
 Future<void> _installApk(String path) async {

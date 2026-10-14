@@ -51,7 +51,10 @@ String buildFrpcToml({
     ..writeln('# 由 AFRP OIDC App 自动生成，请勿手动修改（修改会在下次连接时覆盖）')
     ..writeln('serverAddr = "${_esc(addr)}"')
     ..writeln('serverPort = ${server.port}')
-    ..writeln('user = "${_esc(user.username)}"');
+    ..writeln('user = "${_esc(user.username)}"')
+    // 开机自启时网络/DNS 可能尚未就绪，首连易写超时；默认 loginFailExit=true 会一次失败即退出不重试，
+    // 置 false 让 frpc 持续重试直到连上。
+    ..writeln('loginFailExit = false');
   if (addr != server.addr) {
     b.writeln('transport.tls.serverName = "${_esc(server.addr)}"');
   }
