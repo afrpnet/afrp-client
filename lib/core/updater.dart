@@ -127,7 +127,8 @@ class UpdateManifest {
 
 String _trimBase(String baseUrl) => baseUrl.replaceAll(RegExp(r'/+$'), '');
 
-String manifestUrl(String baseUrl) => '${_trimBase(baseUrl)}/download/manifest.json';
+String manifestUrl(String baseUrl) =>
+    '${_trimBase(baseUrl)}/download/manifest.json';
 
 String downloadPageUrl(String baseUrl) => '${_trimBase(baseUrl)}/download/';
 
@@ -148,9 +149,9 @@ String r2DownloadUrl(String filename, {String subdir = ''}) {
 
 /// 判断文件名是否属于 frpc 类别
 bool isFrpcFile(String filename) {
-  return filename.startsWith('frp_') || 
-         filename.endsWith('.ipk') || 
-         filename.contains('luci-app-afrp');
+  return filename.startsWith('frp_') ||
+      filename.endsWith('.ipk') ||
+      filename.contains('luci-app-afrp');
 }
 
 /// 根据文件类型确定 R2 子目录
@@ -279,7 +280,8 @@ List<String>? matchGitHubAsset(
     final name = assetPattern(platform, arch, channel ?? '', ext);
     if (release.assetNames.contains(name)) {
       // 构造下载 URL（用第一个源，下载时会回退）
-      final url = '${_trimBase(kGitHubSources[0])}$repo/releases/download/${release.tag}/$name';
+      final url =
+          '${_trimBase(kGitHubSources[0])}$repo/releases/download/${release.tag}/$name';
       return [name, url];
     }
   }
@@ -366,7 +368,9 @@ String currentUpdateArch() {
   if (abi == Abi.androidArm) {
     return 'arm';
   }
-  if (abi == Abi.windowsIA32 || abi == Abi.linuxIA32 || abi == Abi.androidIA32) {
+  if (abi == Abi.windowsIA32 ||
+      abi == Abi.linuxIA32 ||
+      abi == Abi.androidIA32) {
     return '386';
   }
   return abi.toString();
@@ -388,15 +392,10 @@ int compareVersions(String a, String b) {
 }
 
 List<int> _versionParts(String v) {
-  return v
-      .trim()
-      .replaceFirst(RegExp('^[vV]'), '')
-      .split('.')
-      .map((s) {
-        final m = RegExp(r'^\d+').firstMatch(s);
-        return m == null ? 0 : int.parse(m.group(0)!);
-      })
-      .toList();
+  return v.trim().replaceFirst(RegExp('^[vV]'), '').split('.').map((s) {
+    final m = RegExp(r'^\d+').firstMatch(s);
+    return m == null ? 0 : int.parse(m.group(0)!);
+  }).toList();
 }
 
 /// 架构别名归一化：清单中可能用 x64/amd64、arm64/aarch64 等不同命名
@@ -418,7 +417,13 @@ UpdateEntry? chooseEntry(
   String? arch,
 }) {
   final pool = manifest.items
-      .where((e) => e.kind == kind && e.platform == platform && e.latest && e.url.isNotEmpty)
+      .where(
+        (e) =>
+            e.kind == kind &&
+            e.platform == platform &&
+            e.latest &&
+            e.url.isNotEmpty,
+      )
       .toList();
   if (pool.isEmpty) {
     return null;
@@ -429,7 +434,10 @@ UpdateEntry? chooseEntry(
   UpdateEntry? pick(Iterable<UpdateEntry> src) {
     UpdateEntry? best;
     for (final e in src) {
-      if (wantArch != null && e.arch.isNotEmpty && _normalizeArch(e.arch) != 'all' && _normalizeArch(e.arch) != wantArch) {
+      if (wantArch != null &&
+          e.arch.isNotEmpty &&
+          _normalizeArch(e.arch) != 'all' &&
+          _normalizeArch(e.arch) != wantArch) {
         continue;
       }
       if (best == null) {
@@ -449,7 +457,9 @@ UpdateEntry? chooseEntry(
     return best;
   }
 
-  var best = channel == null ? null : pick(pool.where((e) => e.channel == channel));
+  var best = channel == null
+      ? null
+      : pick(pool.where((e) => e.channel == channel));
   best ??= pick(pool);
   return best;
 }
@@ -471,7 +481,7 @@ Future<File> downloadUpdateFile(
 
   // 构建下载 URL 列表：优先 R2，其次 GitHub
   final urls = <String>[];
-  
+
   // 1. 添加 R2 站内镜像（如果 mirrors 中有）
   final r2Mirror = entry.mirrors.firstWhere(
     (m) => m['name'] == '站内镜像',
@@ -484,7 +494,7 @@ Future<File> downloadUpdateFile(
     final subdir = r2SubdirForFile(entry.file);
     urls.add(r2DownloadUrl(entry.file, subdir: subdir));
   }
-  
+
   // 2. 如果是 GitHub URL，添加多源列表
   if (entry.url.contains('github.com/')) {
     // 从 URL 提取 repo/tag/name
@@ -511,7 +521,9 @@ Future<File> downloadUpdateFile(
   if (!dir.existsSync()) {
     dir.createSync(recursive: true);
   }
-  final out = File('${dir.path}${Platform.pathSeparator}${entry.file.isEmpty ? 'update.bin' : entry.file}');
+  final out = File(
+    '${dir.path}${Platform.pathSeparator}${entry.file.isEmpty ? 'update.bin' : entry.file}',
+  );
 
   final c = client ?? http.Client();
   IOSink? sink;
@@ -541,7 +553,8 @@ Future<File> downloadUpdateFile(
       await sink.flush();
       await sink.close();
       sink = null;
-      if (entry.sha256.isNotEmpty && sha.hexDigest() != entry.sha256.toLowerCase()) {
+      if (entry.sha256.isNotEmpty &&
+          sha.hexDigest() != entry.sha256.toLowerCase()) {
         lastErr = 'SHA-256 不一致';
         if (out.existsSync()) out.deleteSync();
         continue;
@@ -570,11 +583,16 @@ Future<File> downloadUpdateFile(
 }
 
 /// 若为 .tar.gz/.tgz/.zip 则解出 [preferredName] 文件，否则原样返回
-Future<File> extractExecutable(File archiveFile, {required String preferredName}) async {
+Future<File> extractExecutable(
+  File archiveFile, {
+  required String preferredName,
+}) async {
   final lower = archiveFile.path.toLowerCase();
   List<ArchiveFile>? files;
   if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) {
-    files = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(await archiveFile.readAsBytes())).files;
+    files = TarDecoder()
+        .decodeBytes(GZipDecoder().decodeBytes(await archiveFile.readAsBytes()))
+        .files;
   } else if (lower.endsWith('.zip')) {
     files = ZipDecoder().decodeBytes(await archiveFile.readAsBytes()).files;
   } else {
@@ -619,7 +637,10 @@ class FrpcUpdateCheck {
 }
 
 /// 查询 frpc 更新；优先从 GitHub Release 获取，失败回退到网站清单
-Future<FrpcUpdateCheck?> checkFrpcUpdate(String baseUrl, {http.Client? client}) async {
+Future<FrpcUpdateCheck?> checkFrpcUpdate(
+  String baseUrl, {
+  http.Client? client,
+}) async {
   // Android：frpc 作为 native lib 随 APK 打包，运行于只读的 nativeLibraryDir，
   // 受 W^X 限制无法在线替换，版本随 App 升级而更新。
   if (Platform.isAndroid) {
@@ -666,7 +687,12 @@ Future<FrpcUpdateCheck?> checkFrpcUpdate(String baseUrl, {http.Client? client}) 
 
   // 回退：网站 manifest
   final manifest = await fetchUpdateManifest(baseUrl, client: client);
-  final entry = chooseEntry(manifest, kind: 'frpc', platform: frpcPlatform, arch: arch);
+  final entry = chooseEntry(
+    manifest,
+    kind: 'frpc',
+    platform: frpcPlatform,
+    arch: arch,
+  );
   if (entry == null) {
     return null;
   }
@@ -675,7 +701,11 @@ Future<FrpcUpdateCheck?> checkFrpcUpdate(String baseUrl, {http.Client? client}) 
 }
 
 /// 匹配 frpc GitHub 资产
-List<String>? _matchFrpcAsset(GitHubReleaseInfo release, String platform, String arch) {
+List<String>? _matchFrpcAsset(
+  GitHubReleaseInfo release,
+  String platform,
+  String arch,
+) {
   String ghOs(String p) => p == 'macos' ? 'darwin' : p;
   final os = ghOs(platform);
 
@@ -739,7 +769,10 @@ Future<bool> isWindowsInstalled() async {
 }
 
 /// 查询 App 更新；优先从 GitHub Release 获取，失败回退到网站清单
-Future<AppUpdateCheck?> checkAppUpdate(String baseUrl, {http.Client? client}) async {
+Future<AppUpdateCheck?> checkAppUpdate(
+  String baseUrl, {
+  http.Client? client,
+}) async {
   final platform = currentUpdatePlatform();
   final arch = currentUpdateArch();
   String? channel;
@@ -754,7 +787,10 @@ Future<AppUpdateCheck?> checkAppUpdate(String baseUrl, {http.Client? client}) as
 
   // 先试 GitHub
   try {
-    final release = await fetchGitHubRelease('afrpnet/afrp-client', client: client);
+    final release = await fetchGitHubRelease(
+      'afrpnet/afrp-client',
+      client: client,
+    );
     final match = _matchAppAsset(release, platform, arch, channel);
     if (match != null) {
       final [assetName, url] = match;
@@ -781,7 +817,13 @@ Future<AppUpdateCheck?> checkAppUpdate(String baseUrl, {http.Client? client}) as
 
   // 回退：网站 manifest
   final manifest = await fetchUpdateManifest(baseUrl, client: client);
-  final entry = chooseEntry(manifest, kind: 'app', platform: platform, channel: channel, arch: arch);
+  final entry = chooseEntry(
+    manifest,
+    kind: 'app',
+    platform: platform,
+    channel: channel,
+    arch: arch,
+  );
   if (entry == null) {
     return null;
   }
@@ -802,7 +844,8 @@ List<String>? _matchAppAsset(
   for (final ch in channels) {
     for (final ext in exts) {
       final suffix = ch.isNotEmpty ? '_$ch.$ext' : '.$ext';
-      final name = 'afrp-oidc-client_${release.version}_${platform}_$arch$suffix';
+      final name =
+          'afrp-oidc-client_${release.version}_${platform}_$arch$suffix';
       if (release.assetNames.contains(name)) {
         final url = githubDownloadUrl(release, name);
         return [name, url];
@@ -825,12 +868,16 @@ Future<void> performAppUpdate(
 
   if (platform == 'windows') {
     final file = await downloadUpdateFile(entry, onProgress: onProgress);
-    final isSetup = entry.channel == 'installer' ||
+    final isSetup =
+        entry.channel == 'installer' ||
         RegExp('setup|install', caseSensitive: false).hasMatch(entry.file);
     if (await isWindowsInstalled() && isSetup) {
       await _runInstallerAndRestart(file, Platform.resolvedExecutable);
     } else {
-      final binary = await extractExecutable(file, preferredName: 'afrp_oidc.exe');
+      final binary = await extractExecutable(
+        file,
+        preferredName: 'afrp_oidc.exe',
+      );
       await _replacePortableAndRestart(binary);
     }
     exit(0);
@@ -872,9 +919,10 @@ timeout /t 1 /nobreak >nul
 set /a WAITED+=1
 goto waitloop
 :proceed
-"${installer.path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS
+start /wait "" "${installer.path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS
 timeout /t 2 /nobreak >nul
 start "" "$exePath"
+del "%~f0.vbs" 2>nul
 del "%~f0"
 ''', flush: true);
   await _startHiddenBat(bat);
@@ -906,19 +954,27 @@ goto waitloop
 :proceed
 copy /y "${newBinary.path}" "${current.path}" >nul
 start "" "${current.path}"
+del "%~f0.vbs" 2>nul
 del "%~f0"
 ''', flush: true);
   await _startHiddenBat(bat);
   exit(0);
 }
 
-/// 以最小化、脱离父进程的方式启动更新 bat，避免弹出抢占焦点的 CMD 窗口
+/// 完全隐藏地启动更新 bat。
+/// 直接用 cmd /c start /min 仍会在任务栏留下一个最小化控制台窗口（用户看到"关不掉的 CMD"）。
+/// 这里改用 wscript.exe（GUI 子系统，无控制台）执行一段 VBS，由 VBS 以窗口样式 0（隐藏）
+/// 运行 bat，全过程不弹任何窗口、不占任务栏。
 Future<void> _startHiddenBat(File bat) async {
-  await Process.start(
-    'cmd',
-    ['/c', 'start', '""', '/min', 'cmd', '/c', bat.path],
-    mode: ProcessStartMode.detached,
+  final vbs = File('${bat.path}.vbs');
+  // VBS 字符串里双引号需成对转义；bat 路径含空格也已由内层引号包住。
+  await vbs.writeAsString(
+    'CreateObject("WScript.Shell").Run "cmd /c ""${bat.path}""", 0, False\r\n',
+    flush: true,
   );
+  await Process.start('wscript.exe', [
+    vbs.path,
+  ], mode: ProcessStartMode.detached);
 }
 
 Future<void> _installApk(String path) async {
