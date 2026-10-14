@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/app_state.dart';
 import 'core/tray_service.dart';
 import 'core/updater.dart';
+import 'frpc/auto_connect.dart';
 import 'frpc/frpc_manager.dart';
 import 'ui/home_shell.dart';
 import 'ui/login_page.dart';
@@ -39,6 +40,9 @@ class _FrpAppState extends State<FrpApp> {
     super.initState();
     appState.init().then((_) async {
       await frpcManager.refreshInstalledVersion();
+      if (appState.autoConnectOnLaunch) {
+        await autoConnectFrpc();
+      }
       await _silentAppUpdateCheck();
     });
     _lifecycle = AppLifecycleListener(

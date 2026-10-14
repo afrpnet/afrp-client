@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../core/api_client.dart';
 import '../core/app_state.dart';
+import '../core/autostart.dart';
 import '../core/models.dart';
 import '../core/tray_service.dart';
 import '../core/updater.dart';
@@ -22,6 +23,20 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   bool _checkingFrpc = false;
   bool _checkingApp = false;
+  bool _bootAutostart = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAutostart();
+  }
+
+  Future<void> _loadAutostart() async {
+    final v = await isBootAutostartEnabled();
+    if (mounted) {
+      setState(() => _bootAutostart = v);
+    }
+  }
 
   @override
   void dispose() {
@@ -42,6 +57,8 @@ class _SettingsPageState extends State<SettingsPage> {
               _accountCard(user),
               const SizedBox(height: 12),
               _secretCard(),
+              const SizedBox(height: 12),
+              _startupCard(),
               const SizedBox(height: 12),
               _updateCard(),
               const SizedBox(height: 12),
@@ -178,6 +195,46 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _startupCard() {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.power_settings_new, size: 20),
+                const SizedBox(width: 8),
+                Text('启动', style: theme.textTheme.titleMedium),
+              ],
+            ),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('启动时自动连接 frpc'),
+              subtitle: const Text('打开 App 后自动建立隧道连接'),
+              value: appState.autoConnectOnLaunch,
+              onChanged: (v) => appState.setAutoConnectOnLaunch(v),
+            ),
+            if (bootAutostartSupported)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('开机自启动'),
+                subtitle: const Text('登录系统后自动运行本程序'),
+                value: _bootAutostart,
+                onChanged: (v) async {
+                  await setBootAutostart(v);
+                  await _loadAutostart();
+                },
+              ),
           ],
         ),
       ),

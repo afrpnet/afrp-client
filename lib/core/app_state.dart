@@ -74,6 +74,7 @@ class AppState extends ChangeNotifier {
     final token = await _secrets.read(_kToken);
     api = ApiClient(baseUrl: baseUrl, token: token);
     selectedServerId = _prefs!.getInt(_kServerId);
+    autoConnectOnLaunch = _prefs!.getBool(_kAutoConnect) ?? true;
     loggedIn = (token ?? '').isNotEmpty;
     booted = true;
     notifyListeners();
@@ -414,6 +415,17 @@ class AppState extends ChangeNotifier {
   }
 
   /* ==================== 设置 ==================== */
+
+  static const _kAutoConnect = 'auto_connect_on_launch';
+
+  /// 启动 App 时自动连接 frpc（默认开启）
+  bool autoConnectOnLaunch = true;
+
+  Future<void> setAutoConnectOnLaunch(bool v) async {
+    autoConnectOnLaunch = v;
+    await _prefs?.setBool(_kAutoConnect, v);
+    notifyListeners();
+  }
 }
 
 /// 全局单例
