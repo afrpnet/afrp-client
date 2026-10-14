@@ -2,8 +2,8 @@
   "app": {
     "bundleName": "net.afrp.frp_oidc_app",
     "vendor": "example",
-    "versionCode": 1001010,
-    "versionName": "1.1.10",
+    "versionCode": 1001011,
+    "versionName": "1.1.11",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }
