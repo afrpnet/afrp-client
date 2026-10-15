@@ -3,6 +3,10 @@
 
 #define MyAppname "AFRP OIDC Client"
 #define MyAppVersion "1.2.2"
+; 架构由 CI 通过 /DMyAppArch=arm64 传入；不传则默认 amd64（现有 amd64 job 行为不变）
+#ifndef MyAppArch
+  #define MyAppArch "amd64"
+#endif
 #define MyAppPublisher "afrp.net"
 #define MyAppURL "https://www.afrp.net"
 #define MyAppExename "afrp_oidc.exe"
@@ -24,15 +28,20 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=admin
 PrivilegesRequiredOverridesAllowed=commandline
 OutputDir={#OutputDir}
-OutputBaseFilename=afrp-oidc-client_{#MyAppVersion}_windows_amd64_setup
+OutputBaseFilename=afrp-oidc-client_{#MyAppVersion}_windows_{#MyAppArch}_setup
 SetupIconFile=..\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExename}
 UninstallDisplayname={#MyAppname}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+#if MyAppArch == "arm64"
+  ArchitecturesAllowed=arm64
+  ArchitecturesInstallIn64BitMode=arm64
+#else
+  ArchitecturesAllowed=x64compatible
+  ArchitecturesInstallIn64BitMode=x64compatible
+#endif
 MinVersion=10.0.17763
 SetupLogging=yes
 InfoBeforeFile=install-notes.txt
