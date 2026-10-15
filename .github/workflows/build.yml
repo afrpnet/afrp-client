@@ -922,7 +922,7 @@ jobs:
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           echo "当前版本: $VER"
-          echo "检查 R2 中的旧版本文件..."
+          echo "检查 R2 中的旧版本文件（每个类型保留最近 2 个版本）..."
 
           export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
           export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
@@ -933,8 +933,7 @@ jobs:
           FILES=$(aws s3 ls "s3://${R2_BUCKET}/app/" --endpoint-url "$ENDPOINT" 2>/dev/null | awk '{print $4}' || echo "")
 
           # 本次成功产出的新版产物「类型键」集合（把版本号归一为 <VER>）。
-          # 回退策略「保最近成功版·不删」：只有当同类型的新版产物存在时，才删对应旧版；
-          # 某平台构建失败/超时 → dist 里没有它的新版 → 保留其旧版，manifest 仍指向旧版，下载不断链。
+          # 用于把「即将上传的当前版」并入候选版本，从而正确计算每类型最近 2 版。
           declare -A HAVE_NEW
           for f in dist/*; do
             [ -f "$f" ] || continue
@@ -945,26 +944,49 @@ jobs:
           if [ -z "$FILES" ]; then
             echo "R2 中没有文件，无需清理"
           else
+            # 按类型键收集 R2 中已存在的版本
+            declare -A KEYVERS
+            for FILE in $FILES; do
+              if [[ "$FILE" =~ [_-]([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+                FV="${BASH_REMATCH[1]}"
+                KEY=$(echo "$FILE" | sed -E 's/[_-][0-9]+\.[0-9]+\.[0-9]+/_<VER>/')
+                KEYVERS["$KEY"]+="$FV"$'\n'
+              fi
+            done
+
+            # 每个类型键：候选版本 = R2 已有版本 ∪（本次将上传的 VER，若该类型有新版）；
+            # 版本降序去重后保留最近 2 个，其余标记删除。
+            # 兜底不变：某平台本次失败 → 候选只有 R2 旧版 → 其最新版仍在 top2 被保留，
+            # manifest 指向它，下载不断链。
+            declare -A KEEPVER
+            for KEY in "${!KEYVERS[@]}"; do
+              CAND="${KEYVERS[$KEY]}"
+              if [ -n "${HAVE_NEW[$KEY]:-}" ]; then
+                CAND+="$VER"$'\n'
+              fi
+              TOP2=$(printf '%s' "$CAND" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -u -V -r | head -2)
+              for V in $TOP2; do
+                KEEPVER["$KEY|$V"]=1
+              done
+              echo "类型 $KEY → 保留版本: $(echo $TOP2 | tr '\n' ' ')"
+            done
+
             DELETED=0
             KEPT=0
             for FILE in $FILES; do
-              # 提取文件名中的版本号（支持下划线 _1.1.6 或连字符 -1.1.6）
               if [[ "$FILE" =~ [_-]([0-9]+\.[0-9]+\.[0-9]+) ]]; then
-                FILE_VER="${BASH_REMATCH[1]}"
-                if [ "$FILE_VER" != "$VER" ]; then
-                  KEY=$(echo "$FILE" | sed -E 's/[_-][0-9]+\.[0-9]+\.[0-9]+/_<VER>/')
-                  if [ -n "${HAVE_NEW[$KEY]:-}" ]; then
-                    echo "删除旧版本: $FILE (版本 $FILE_VER，已有同类型新版)"
-                    aws s3 rm "s3://${R2_BUCKET}/app/$FILE" --endpoint-url "$ENDPOINT" 2>/dev/null || true
-                    DELETED=$((DELETED + 1))
-                  else
-                    echo "保留旧版本: $FILE (版本 $FILE_VER，本次该平台未产出新版)"
-                    KEPT=$((KEPT + 1))
-                  fi
+                FV="${BASH_REMATCH[1]}"
+                KEY=$(echo "$FILE" | sed -E 's/[_-][0-9]+\.[0-9]+\.[0-9]+/_<VER>/')
+                if [ -n "${KEEPVER[$KEY|$FV]:-}" ]; then
+                  KEPT=$((KEPT + 1))
+                else
+                  echo "删除旧版本: $FILE (版本 $FV，该类型已保留最近 2 版)"
+                  aws s3 rm "s3://${R2_BUCKET}/app/$FILE" --endpoint-url "$ENDPOINT" 2>/dev/null || true
+                  DELETED=$((DELETED + 1))
                 fi
               fi
             done
-            echo "✅ R2 清理完成：删除 $DELETED 个旧版本，保留 $KEPT 个（对应平台本次未成功）"
+            echo "✅ R2 清理完成：删除 $DELETED 个旧版本，保留 $KEPT 个（每类型最近 2 版）"
           fi
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
