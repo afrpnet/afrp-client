@@ -1,0 +1,147 @@
+name: Rebuild Windows arm64 (dispatch)
+
+# 单独重建 Windows arm64（免安装 zip + 安装版 exe）并覆盖发布，不动其它平台。
+# 用途：arm64 侧有改动需要重出当前版本，或把新加的 arm64 安装版补进已发布的版本。
+# 从当前分支 HEAD 构建；release / R2 / manifest 只更新 windows arm64 两个条目。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        shell: bash
+        run: bash .github/sync-version-ci.sh
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
+
+      - name: Download frpc (Windows arm64)
+        shell: bash
+        run: |
+          FRPC_VERSION="0.71.0"
+          mkdir -p assets/frpc/windows
+          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_windows_arm64.zip" -o frpc.zip
+          unzip -o -j frpc.zip "*/frpc.exe" -d assets/frpc/windows/
+
+      - name: Build Windows arm64
+        run: flutter build windows --release
+
+      - name: Package portable
+        shell: pwsh
+        run: |
+          $VER = (Get-Content pubspec.yaml | Select-String '^version:' | ForEach-Object { ($_ -replace '^version:\s+([0-9]+\.[0-9]+\.[0-9]+).*','$1') })
+          $STAGE = "build/windows/arm64/runner/Release"
+          if (-not (Test-Path $STAGE)) { throw "expected $STAGE to exist (arm64 build output)" }
+          Remove-Item -Recurse -Force "$STAGE/data/flutter_assets/assets/frpc/linux" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$STAGE/data/flutter_assets/assets/frpc/macos" -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "$STAGE/*" -DestinationPath "dist/afrp-oidc-client_${VER}_windows_arm64_portable.zip" -Force
+
+      - name: Prepare installer
+        shell: bash
+        run: |
+          STAGE="build/installer/staging"
+          mkdir -p "$STAGE"
+          cp -r build/windows/arm64/runner/Release/* "$STAGE/"
+          rm -rf "$STAGE/data/flutter_assets/assets/frpc/linux"
+          rm -rf "$STAGE/data/flutter_assets/assets/frpc/macos"
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build installer (arm64)
+        shell: powershell
+        run: |
+          $VER = (Get-Content pubspec.yaml | Select-String '^version:' | ForEach-Object { ($_ -replace '^version:\s+([0-9]+\.[0-9]+\.[0-9]+).*','$1') })
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$VER /DMyAppArch=arm64 installer\setup.iss
+
+      - name: Collect installer
+        shell: bash
+        run: |
+          cp build/installer/output/*.exe dist/
+          ls -la dist/
+
+      - name: Upload to Release (overwrite same version)
+        shell: bash
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          gh release upload "v$VER" dist/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-rebuild
+          path: dist/*
+          if-no-files-found: warn
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download windows arm64 assets from Release
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          mkdir -p dist
+          gh release download "v$VER" --pattern '*windows_arm64*' --dir dist --clobber
+          ls -la dist/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload windows arm64 to R2 (app/)
+        if: env.R2_ACCOUNT_ID != ''
+        continue-on-error: true
+        run: |
+          chmod +x .github/scripts/upload-r2.sh
+          for f in dist/*windows_arm64*; do
+            [ -f "$f" ] || continue
+            echo "=== 上传 $(basename "$f") 到 R2 (app/) ==="
+            bash .github/scripts/upload-r2.sh "$f" "app" || echo "::warning::R2 上传失败: $f"
+          done
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
+      - name: Update manifest (windows arm64 entries) and push
+        if: env.CI_API_SECRET != '' && env.CI_API_URL != ''
+        run: |
+          chmod +x .github/scripts/update-manifest-incremental.sh
+          rm -f /tmp/manifest-updated.json
+          for f in dist/*windows_arm64*; do
+            [ -f "$f" ] || continue
+            echo "=== 更新 manifest: $(basename "$f") (app) ==="
+            FILE="$f" SUBDIR="app" SITE_URL="${SITE_URL:-https://www.afrp.net}" \
+              bash .github/scripts/update-manifest-incremental.sh "$f" "app"
+          done
+          echo "📤 推送 manifest 到网站 API..."
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${CI_API_URL}/api/ci/update-manifest.php" \
+            -H "Authorization: Bearer ${CI_API_SECRET}" \
+            -F "manifest=@/tmp/manifest-updated.json")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Manifest 推送失败 (HTTP $HTTP_CODE): $BODY"
+            exit 1
+          fi
+          echo "✅ Manifest 推送成功: $BODY"
+        env:
+          CI_API_SECRET: ${{ secrets.CI_API_SECRET }}
+          CI_API_URL: ${{ secrets.CI_API_URL }}
+          SITE_URL: ${{ secrets.SITE_URL || 'https://www.afrp.net' }}
