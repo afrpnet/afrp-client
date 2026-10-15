@@ -1,0 +1,72 @@
+name: Win arm64 (experiment)
+
+# 实验性：验证能否在 GitHub 托管的 windows-11-arm 原生 runner 上
+# 用 Flutter master channel 构建出 Windows arm64 客户端。
+# 只上传 artifact，不碰 release / R2 / manifest，失败不影响正常发版。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-arm64:
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        shell: bash
+        run: bash .github/sync-version-ci.sh
+
+      # stable 不发布 Windows arm64 归档；master 会让 action 按 pin 的 tag 克隆 SDK
+      # 并拉取宿主自带的 Dart SDK（参考 FlClash 的做法）。
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Download frpc (Windows arm64)
+        shell: bash
+        run: |
+          FRPC_VERSION="0.71.0"
+          mkdir -p assets/frpc/windows
+          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_windows_arm64.zip" -o frpc.zip
+          unzip -o -j frpc.zip "*/frpc.exe" -d assets/frpc/windows/
+          ls -la assets/frpc/windows/
+
+      - name: Build Windows arm64
+        run: flutter build windows --release
+
+      - name: Verify output arch
+        shell: pwsh
+        run: |
+          $rel = "build/windows/arm64/runner/Release"
+          if (-not (Test-Path $rel)) {
+            Write-Host "arm64 Release dir not found; listing build/windows:"
+            Get-ChildItem build/windows -Recurse -Depth 2 | Select-Object FullName
+            throw "expected $rel to exist"
+          }
+          Write-Host "Found arm64 Release:"
+          Get-ChildItem $rel | ForEach-Object { Write-Host "  $($_.Name)" }
+
+      - name: Package portable
+        shell: pwsh
+        run: |
+          $VER = (Get-Content pubspec.yaml | Select-String '^version:' | ForEach-Object { ($_ -replace '^version:\s+([0-9]+\.[0-9]+\.[0-9]+).*','$1') })
+          $STAGE = "build/windows/arm64/runner/Release"
+          Remove-Item -Recurse -Force "$STAGE/data/flutter_assets/assets/frpc/linux" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$STAGE/data/flutter_assets/assets/frpc/macos" -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "$STAGE/*" -DestinationPath "dist/afrp-oidc-client_${VER}_windows_arm64_portable.zip" -Force
+          Get-ChildItem dist/ | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-arm64-portable
+          path: dist/*.zip
+          if-no-files-found: error
