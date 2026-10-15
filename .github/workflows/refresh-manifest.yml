@@ -1,0 +1,59 @@
+name: Refresh manifest (hide platforms)
+
+# 一次性/按需工具：拉取线上 manifest，剔除指定平台的「客户端(app)」条目后回推，
+# 让下载页立即停止展示这些平台。不影响 frpc 核心与 OpenWrt 插件条目。
+# 默认隐藏 linux / android / ohos（鸿蒙）客户端；构建流程不变，产物仍在 GitHub Release。
+on:
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: '要从网站隐藏的 app 平台（逗号分隔）'
+        required: false
+        default: 'linux,android,ohos'
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch live manifest
+        run: |
+          SITE_URL="${SITE_URL:-https://www.afrp.net}"
+          curl -sS --max-time 60 "$SITE_URL/download/manifest.json" -o /tmp/manifest.json
+          echo "拉取到 $(jq '.items | length' /tmp/manifest.json) 条"
+
+      - name: Strip hidden app platforms
+        run: |
+          PLATFORMS='${{ github.event.inputs.platforms }}'
+          [ -n "$PLATFORMS" ] || PLATFORMS='linux,android,ohos'
+          # 构造 jq 平台数组
+          ARR=$(printf '%s' "$PLATFORMS" | jq -R 'split(",") | map(gsub("^\\s+|\\s+$";"")) | map(select(length>0))')
+          echo "隐藏平台: $ARR"
+          jq --argjson hide "$ARR" \
+            '.items |= map(select(((.kind=="app") and (.platform as $p | $hide | index($p))) | not)) | .count = (.items|length)' \
+            /tmp/manifest.json > /tmp/manifest-final.json
+          mv /tmp/manifest-final.json /tmp/manifest.json
+          echo "剔除后剩余 $(jq '.count' /tmp/manifest.json) 条"
+          echo "--- 剩余 app 平台 ---"
+          jq -r '.items[] | select(.kind=="app") | "\(.platform)/\(.channel)/\(.arch) \(.file)"' /tmp/manifest.json | sort -u
+
+      - name: Push manifest to website API
+        if: env.CI_API_SECRET != '' && env.CI_API_URL != ''
+        run: |
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${CI_API_URL}/api/ci/update-manifest.php" \
+            -H "Authorization: Bearer ${CI_API_SECRET}" \
+            -F "manifest=@/tmp/manifest.json")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Manifest 推送失败 (HTTP $HTTP_CODE): $BODY"
+            exit 1
+          fi
+          echo "✅ Manifest 推送成功: $BODY"
+        env:
+          CI_API_SECRET: ${{ secrets.CI_API_SECRET }}
+          CI_API_URL: ${{ secrets.CI_API_URL }}
+          SITE_URL: ${{ secrets.SITE_URL || 'https://www.afrp.net' }}

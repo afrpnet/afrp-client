@@ -3,7 +3,7 @@ name: Rebuild OHOS HAP (dispatch)
 # 单独重建鸿蒙 HAP 并覆盖发布（不动其它平台）。
 # 用途：ohos 侧有小改动（如图标/资源）需要重出 1.2.x 的 HAP，
 # 但不想触发整轮全平台发版时手动跑本 workflow。
-# 从当前分支 HEAD 构建；release / R2 / manifest 只更新 ohos 条目。
+# 从当前分支 HEAD 构建；只覆盖 GitHub Release 的 ohos HAP（不再上 R2 / manifest）。
 on:
   workflow_dispatch:
 
@@ -253,47 +253,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 仅上传 ohos hap 到 R2（同名覆盖），不做旧版本清理（版本号未变）
-      - name: Upload OHOS HAP to R2 (app/)
-        if: env.R2_ACCOUNT_ID != ''
-        continue-on-error: true
-        run: |
-          chmod +x .github/scripts/upload-r2.sh
-          for f in dist/*ohos*.hap; do
-            [ -f "$f" ] || continue
-            echo "=== 上传 $(basename "$f") 到 R2 (app/) ==="
-            bash .github/scripts/upload-r2.sh "$f" "app" || echo "::warning::R2 上传失败: $f"
-          done
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-
-      # 只更新 manifest 的 ohos 条目（脚本会下载现有 manifest、替换同 platform+channel+arch 条目后回推）
-      - name: Update manifest (ohos entry only) and push
-        if: env.CI_API_SECRET != '' && env.CI_API_URL != ''
-        run: |
-          chmod +x .github/scripts/update-manifest-incremental.sh
-          rm -f /tmp/manifest-updated.json
-          for f in dist/*ohos*.hap; do
-            [ -f "$f" ] || continue
-            echo "=== 更新 manifest: $(basename "$f") (app) ==="
-            FILE="$f" SUBDIR="app" SITE_URL="${SITE_URL:-https://www.afrp.net}" \
-              bash .github/scripts/update-manifest-incremental.sh "$f" "app"
-          done
-          echo "📤 推送 manifest 到网站 API..."
-          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${CI_API_URL}/api/ci/update-manifest.php" \
-            -H "Authorization: Bearer ${CI_API_SECRET}" \
-            -F "manifest=@/tmp/manifest-updated.json")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | head -n-1)
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Manifest 推送失败 (HTTP $HTTP_CODE): $BODY"
-            exit 1
-          fi
-          echo "✅ Manifest 推送成功: $BODY"
-        env:
-          CI_API_SECRET: ${{ secrets.CI_API_SECRET }}
-          CI_API_URL: ${{ secrets.CI_API_URL }}
-          SITE_URL: ${{ secrets.SITE_URL || 'https://www.afrp.net' }}
+      # 鸿蒙版不再上 R2 / manifest（网站不展示），HAP 仅保留在 GitHub Release。
+      # 如需在网站展示，恢复此前被移除的「Upload OHOS HAP to R2」与「Update manifest」两步。

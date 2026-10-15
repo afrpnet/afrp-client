@@ -27,8 +27,15 @@ jobs:
       - name: Create release with notes
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          DISCLAIMER='> ⚠️ 鸿蒙版、安卓版、Linux 版未经测试，欢迎多提意见。'
           # --generate-notes：自动汇总上一个 tag 到本 tag 的提交，生成「更新内容」
           gh release create "v$VER" --title "v$VER" --generate-notes || true
+          # 在自动生成的更新说明之后追加免责声明（已存在则不重复追加）
+          BODY=$(gh release view "v$VER" --json body -q .body 2>/dev/null || echo "")
+          if ! printf '%s' "$BODY" | grep -qF "未经测试，欢迎多提意见"; then
+            printf '%s\n\n---\n\n%s\n' "$BODY" "$DISCLAIMER" > /tmp/rel-notes.md
+            gh release edit "v$VER" --notes-file /tmp/rel-notes.md || true
+          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -1001,9 +1008,18 @@ jobs:
           chmod +x .github/scripts/upload-r2.sh
           uploaded_count=0
           failed_count=0
+          skipped_count=0
           for f in dist/*; do
             [ -f "$f" ] || continue
-            echo "=== 上传 $(basename $f) 到 R2 (app/) ==="
+            bn=$(basename "$f")
+            # 鸿蒙/安卓/Linux 客户端不再上 R2（网站不展示；仍保留在 GitHub Release）
+            case "$bn" in
+              afrp-oidc-client_*android*|afrp-oidc-client_*ohos*|afrp-oidc-client_*linux*)
+                echo "⏭️ 跳过 R2 上传（网站不展示）: $bn"
+                skipped_count=$((skipped_count + 1))
+                continue ;;
+            esac
+            echo "=== 上传 $bn 到 R2 (app/) ==="
             if bash .github/scripts/upload-r2.sh "$f" "app"; then
               uploaded_count=$((uploaded_count + 1))
             else
@@ -1011,7 +1027,7 @@ jobs:
               echo "::warning::R2 上传失败: $f"
             fi
           done
-          echo "✅ R2 上传完成：成功 $uploaded_count, 失败 $failed_count"
+          echo "✅ R2 上传完成：成功 $uploaded_count, 失败 $failed_count, 跳过 $skipped_count"
         env:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -1047,13 +1063,15 @@ jobs:
           chmod +x .github/scripts/update-manifest-incremental.sh
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           
-          # 为每个上传的文件更新 manifest
+          # 为每个上传的文件更新 manifest（鸿蒙/安卓/Linux 客户端不写入 manifest）
           for f in dist/*; do
             [ -f "$f" ] || continue
             filename=$(basename "$f")
             
             # 判断子目录
             case "$filename" in
+              afrp-oidc-client_*android*|afrp-oidc-client_*ohos*|afrp-oidc-client_*linux*)
+                echo "⏭️ 跳过 manifest（网站不展示）: $filename"; continue ;;
               afrp-oidc-client_*) subdir="app" ;;
               luci-app-afrp_*|luci-app-afrp-*) subdir="app" ;;
               frpc_*) subdir="frpc" ;;
@@ -1064,6 +1082,17 @@ jobs:
             FILE="$f" SUBDIR="$subdir" SITE_URL="${SITE_URL:-https://www.afrp.net}" \
               bash .github/scripts/update-manifest-incremental.sh "$f" "$subdir"
           done
+
+          # 兜底：本次若无任何文件写入，则以线上 manifest 为基底，确保剔除逻辑仍生效
+          if [ ! -f /tmp/manifest-updated.json ]; then
+            curl -sS "${SITE_URL:-https://www.afrp.net}/download/manifest.json" -o /tmp/manifest-updated.json \
+              || echo '{"schema":1,"items":[]}' > /tmp/manifest-updated.json
+          fi
+
+          # 从最终 manifest 剔除 app 的 linux/android/ohos 条目（网站不再展示；frpc 与 openwrt 保留）
+          jq '.items |= map(select(((.kind=="app") and (.platform=="linux" or .platform=="android" or .platform=="ohos")) | not)) | .count = (.items|length)' \
+            /tmp/manifest-updated.json > /tmp/manifest-final.json && mv /tmp/manifest-final.json /tmp/manifest-updated.json
+          echo "🧹 已剔除 app linux/android/ohos 条目，manifest 剩余 $(jq '.count' /tmp/manifest-updated.json) 条"
           
           # 上传最终 manifest 到网站
           echo "📤 推送 manifest 到网站 API..."
