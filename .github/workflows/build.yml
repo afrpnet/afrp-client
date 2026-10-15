@@ -96,6 +96,53 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # Windows arm64 原生构建：需 windows-11-arm runner + Flutter master channel
+  # （stable 不发布 Windows arm64 归档）。master 每天在变、可能不稳，故 continue-on-error，
+  # 失败不拖累整轮发版；upload 作业 if:always() 仍会跑，R2 按类型键清理会保留其上一个成功版。
+  build-windows-arm64:
+    needs: create-release
+    runs-on: windows-11-arm
+    timeout-minutes: 90
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync version from tag
+        shell: bash
+        run: bash .github/sync-version-ci.sh
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: master
+      - name: Download frpc (Windows arm64)
+        shell: bash
+        run: |
+          FRPC_VERSION="0.71.0"
+          mkdir -p assets/frpc/windows
+          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_windows_arm64.zip" -o frpc.zip
+          unzip -o -j frpc.zip "*/frpc.exe" -d assets/frpc/windows/
+      - name: Build Windows arm64
+        run: flutter build windows --release
+      - name: Prepare portable
+        shell: pwsh
+        run: |
+          $VER = (Get-Content pubspec.yaml | Select-String '^version:' | ForEach-Object { ($_ -replace '^version:\s+([0-9]+\.[0-9]+\.[0-9]+).*','$1') })
+          $STAGE = "build/windows/arm64/runner/Release"
+          if (-not (Test-Path $STAGE)) { throw "expected $STAGE to exist (arm64 build output)" }
+          Remove-Item -Recurse -Force "$STAGE/data/flutter_assets/assets/frpc/linux" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "$STAGE/data/flutter_assets/assets/frpc/macos" -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path "$STAGE/*" -DestinationPath "dist/afrp-oidc-client_${VER}_windows_arm64_portable.zip" -Force
+          Get-ChildItem dist/ | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+      - name: Upload to Release
+        shell: bash
+        run: |
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          ls -la dist/
+          gh release upload "v$VER" dist/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build-macos-arm64:
     needs: create-release
     runs-on: macos-latest
@@ -716,7 +763,7 @@ jobs:
 
   # 上传构建产物到云存储并更新 manifest
   upload-and-update-manifest:
-    needs: [build-windows, build-macos-arm64, build-macos-amd64, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
+    needs: [build-windows, build-windows-arm64, build-macos-arm64, build-macos-amd64, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
     runs-on: ubuntu-latest
     if: always() && github.event_name != 'pull_request'
     steps:

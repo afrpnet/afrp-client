@@ -33,7 +33,16 @@ case "$FILENAME" in
   afrp-oidc-client_*)
     KIND="app"
     # 解析平台、通道、架构
-    if [[ "$FILENAME" == *windows*setup.exe ]]; then
+    # windows arm64 必须在通用 amd64 分支之前判定：*windows*portable.zip 会同时匹配
+    # arm64 与 amd64 两种文件名，若先命中通用分支会把 arm64 误标成 amd64，
+    # 进而因 kind+platform+channel+arch 相同顶替掉真正的 amd64 条目。
+    if [[ "$FILENAME" == *windows*arm64*setup.exe ]]; then
+      PLATFORM="windows"; CHANNEL="installer"; ARCH="arm64"
+      NOTES="Windows 11 ARM64 安装版"
+    elif [[ "$FILENAME" == *windows*arm64*portable.zip ]]; then
+      PLATFORM="windows"; CHANNEL="portable"; ARCH="arm64"
+      NOTES="Windows 11 ARM64 免安装版"
+    elif [[ "$FILENAME" == *windows*setup.exe ]]; then
       PLATFORM="windows"; CHANNEL="installer"; ARCH="amd64"
       NOTES="Windows 10/11 x64 安装版"
     elif [[ "$FILENAME" == *windows*portable.zip ]]; then
