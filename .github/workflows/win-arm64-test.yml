@@ -64,9 +64,40 @@ jobs:
           Compress-Archive -Path "$STAGE/*" -DestinationPath "dist/afrp-oidc-client_${VER}_windows_arm64_portable.zip" -Force
           Get-ChildItem dist/ | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
 
+      - name: Prepare installer
+        shell: bash
+        run: |
+          STAGE="build/installer/staging"
+          mkdir -p "$STAGE"
+          cp -r build/windows/arm64/runner/Release/* "$STAGE/"
+          rm -rf "$STAGE/data/flutter_assets/assets/frpc/linux"
+          rm -rf "$STAGE/data/flutter_assets/assets/frpc/macos"
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Inno Setup version
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc 2>&1 | Select-Object -First 3
+          (Get-Item "C:\Program Files (x86)\Inno Setup 6\Compil32.exe").VersionInfo | ForEach-Object { Write-Host ("Inno Setup version: " + $_.ProductVersion) }
+
+      - name: Build installer (arm64)
+        shell: powershell
+        run: |
+          $VER = (Get-Content pubspec.yaml | Select-String '^version:' | ForEach-Object { ($_ -replace '^version:\s+([0-9]+\.[0-9]+\.[0-9]+).*','$1') })
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$VER /DMyAppArch=arm64 installer\setup.iss
+
+      - name: Collect installer
+        shell: bash
+        run: |
+          cp build/installer/output/*.exe dist/
+          ls -la dist/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-arm64-portable
-          path: dist/*.zip
+          name: windows-arm64
+          path: dist/*
           if-no-files-found: error
