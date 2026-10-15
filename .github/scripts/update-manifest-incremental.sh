@@ -189,7 +189,10 @@ $newItem = [
     'arch' => $arch,
     'version' => $ver,
     'file' => $filename,
-    'url' => "{$site_url}/download/files/" . rawurlencode($filename),
+    // 主 url 不再指向站点本地 /download/files/（该目录已弃用）。
+    // frpc 用 R2 直链（GitHub 上游是 frp_*.zip 整包，非解出的 frpc 二进制）；
+    // app/openwrt 用 GitHub release 直链（App 更新器会先走 R2 镜像，GitHub 作兜底）。
+    'url' => ($kind === 'frpc') ? $r2_url : $gh_url,
     'sha256' => $sha256,
     'size' => $size,
     'date' => $date,
