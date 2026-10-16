@@ -165,48 +165,72 @@ Future<void> showAppUpdateDialog(
   required AppUpdateCheck check,
 }) async {
   final e = check.entry;
+  final mandatory = check.isMandatory;
   final browserFlow = _isBrowserFlow(currentUpdatePlatform());
-  final go = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text('发现新版本 ${e.version}'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('当前版本 ${check.currentVersion}${e.sizeText.isEmpty ? '' : ' · 安装包 ${e.sizeText}'}'),
-            if (e.notes.trim().isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(e.notes.trim(), style: Theme.of(ctx).textTheme.bodySmall),
-            ],
-            const SizedBox(height: 10),
-            Text(_appUpdateHint(e), style: Theme.of(ctx).textTheme.bodySmall),
+
+  while (true) {
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: !mandatory,
+      builder: (ctx) => PopScope(
+        canPop: !mandatory,
+        child: AlertDialog(
+          title: Text(mandatory ? '必须更新到 ${e.version}' : '发现新版本 ${e.version}'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('当前版本 ${check.currentVersion}${e.sizeText.isEmpty ? '' : ' · 安装包 ${e.sizeText}'}'),
+                if (e.notes.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(e.notes.trim(), style: Theme.of(ctx).textTheme.bodySmall),
+                ],
+                const SizedBox(height: 10),
+                Text(_appUpdateHint(e), style: Theme.of(ctx).textTheme.bodySmall),
+                if (mandatory) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    '当前版本已停止服务，需更新后才能继续使用。',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            if (!mandatory)
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('稍后'),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(browserFlow ? '打开下载页' : '立即更新'),
+            ),
           ],
         ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('稍后')),
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx, true),
-          child: Text(browserFlow ? '打开下载页' : '立即更新'),
-        ),
-      ],
-    ),
-  );
-  if (go != true || !context.mounted) {
-    return;
-  }
+    );
+    if (go != true || !context.mounted) {
+      return;
+    }
 
-  final platform = currentUpdatePlatform();
-  final done = browserFlow
-      ? '已在浏览器打开下载页'
-      : platform == 'android'
-          ? '已调起系统安装器，请按提示完成安装'
-          : '安装程序已启动';
-  await _runWithProgress(
-    context,
-    task: (onProgress) => performAppUpdate(baseUrl, e, onProgress: onProgress),
-    doneMessage: done,
-  );
+    final platform = currentUpdatePlatform();
+    final done = browserFlow
+        ? '已在浏览器打开下载页'
+        : platform == 'android'
+            ? '已调起系统安装器，请按提示完成安装'
+            : '安装程序已启动';
+    final ok = await _runWithProgress(
+      context,
+      task: (onProgress) => performAppUpdate(baseUrl, e, onProgress: onProgress),
+      doneMessage: done,
+    );
+    // 成功（Windows/Android 通常会退出或调起安装器）、非强制、或浏览器流程无法校验时结束；
+    // 仅强制更新且下载/安装失败才再次弹出，不允许跳过。
+    if (!mandatory || ok || browserFlow || !context.mounted) {
+      return;
+    }
+  }
 }

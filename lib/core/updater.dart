@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../frpc/frpc_manager.dart';
+import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
@@ -136,8 +137,8 @@ String downloadPageUrl(String baseUrl) => '${_trimBase(baseUrl)}/download/';
 // Cloudflare R2 下载源（不限流量，优先使用）
 // ---------------------------------------------------------------------------
 
-/// R2 自定义域名
-const String kR2BaseUrl = 'https://dl.afrp.net';
+/// R2 自定义域名（后台「APP 设置」可下发覆盖）
+String kR2BaseUrl = 'https://dl.afrp.net';
 
 /// 构建 R2 下载 URL
 String r2DownloadUrl(String filename, {String subdir = ''}) {
@@ -166,13 +167,43 @@ String r2SubdirForFile(String filename) {
 // GitHub Release 更新源（官方 + 代理，按序回退）
 // ---------------------------------------------------------------------------
 
-/// GitHub Release 下载源：先试官方，不通再用代理
-const List<String> kGitHubSources = [
+/// GitHub Release 下载源：先试官方，不通再用代理（后台「APP 设置」可下发覆盖）
+List<String> kGitHubSources = [
   'https://github.com/',
   'https://ghfast.top/https://github.com/',
   'https://gh-proxy.com/https://github.com/',
   'https://ghproxy.net/https://github.com/',
 ];
+
+/// App 自更新仓库 / frpc 内核仓库（后台可下发覆盖）
+String kGhRepo = 'afrpnet/afrp-client';
+String kFrpcRepo = 'fatedier/frp';
+
+/// 后台下发的最低可用版本与强制更新开关（空表示不限制）
+String kMinVersion = '';
+bool kForceUpdate = false;
+
+/// 用 /api/config.php 下发的运行参数覆盖内置默认值；留空字段保持默认。
+/// 在 AppState.loadConfig() 解析配置后调用一次。
+void applyRemoteConfig(PublicConfig cfg) {
+  final r2 = cfg.r2BaseUrl.trim();
+  if (r2.isNotEmpty) {
+    kR2BaseUrl = r2.replaceAll(RegExp(r'/+$'), '');
+  }
+  final repo = cfg.ghRepo.trim();
+  if (repo.isNotEmpty) {
+    kGhRepo = repo;
+  }
+  final frpcRepo = cfg.frpcRepo.trim();
+  if (frpcRepo.isNotEmpty) {
+    kFrpcRepo = frpcRepo;
+  }
+  if (cfg.ghMirrors.isNotEmpty) {
+    kGitHubSources = List<String>.from(cfg.ghMirrors);
+  }
+  kMinVersion = cfg.minVersion.trim();
+  kForceUpdate = cfg.forceUpdate;
+}
 
 /// GitHub Release 信息（从 Atom feed 解析）
 class GitHubReleaseInfo {
@@ -252,8 +283,9 @@ List<String>? matchGitHubAsset(
   required String platform,
   required String arch,
   String? channel,
-  String repo = 'afrpnet/afrp-client',
+  String? repo,
 }) {
+  repo ??= kGhRepo;
   // 平台名映射：app 用 macos，GitHub 用 darwin
   String ghOs(String p) {
     if (p == 'macos') return 'darwin';
@@ -292,9 +324,10 @@ List<String>? matchGitHubAsset(
 String githubDownloadUrl(
   GitHubReleaseInfo release,
   String assetName, {
-  String repo = 'afrpnet/afrp-client',
+  String? repo,
   int sourceIndex = 0,
 }) {
+  repo ??= kGhRepo;
   final base = kGitHubSources[sourceIndex % kGitHubSources.length];
   return '${_trimBase(base)}$repo/releases/download/${release.tag}/$assetName';
 }
@@ -659,7 +692,7 @@ Future<FrpcUpdateCheck?> checkFrpcUpdate(
 
   // 先试 GitHub
   try {
-    final release = await fetchGitHubRelease('fatedier/frp', client: client);
+    final release = await fetchGitHubRelease(kFrpcRepo, client: client);
     final match = _matchFrpcAsset(release, frpcPlatform, arch);
     if (match != null) {
       final [assetName, url] = match;
@@ -717,7 +750,7 @@ List<String>? _matchFrpcAsset(
 
   for (final name in candidates) {
     if (release.assetNames.contains(name)) {
-      final url = githubDownloadUrl(release, name, repo: 'fatedier/frp');
+      final url = githubDownloadUrl(release, name, repo: kFrpcRepo);
       return [name, url];
     }
   }
@@ -746,6 +779,18 @@ class AppUpdateCheck {
   const AppUpdateCheck(this.entry, this.currentVersion);
 
   bool get hasUpdate => compareVersions(entry.version, currentVersion) > 0;
+
+  /// 是否强制更新：后台开启强更，或当前版本低于后台下发的最低可用版本
+  bool get isMandatory {
+    if (!hasUpdate) {
+      return false;
+    }
+    if (kForceUpdate) {
+      return true;
+    }
+    return kMinVersion.isNotEmpty &&
+        compareVersions(currentVersion, kMinVersion) < 0;
+  }
 }
 
 /// Windows 安装版判定：安装目录存在 Inno 卸载器 unins*.exe
@@ -788,7 +833,7 @@ Future<AppUpdateCheck?> checkAppUpdate(
   // 先试 GitHub
   try {
     final release = await fetchGitHubRelease(
-      'afrpnet/afrp-client',
+      kGhRepo,
       client: client,
     );
     final match = _matchAppAsset(release, platform, arch, channel);

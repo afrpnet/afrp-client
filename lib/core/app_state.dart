@@ -7,6 +7,7 @@ import 'api_client.dart';
 import 'autostart.dart';
 import 'models.dart';
 import 'secret_store.dart';
+import 'updater.dart';
 
 /// 全局应用状态：登录态、配置、服务器、套餐、消息、隧道与本地设置。
 /// 全部网络请求经由本类，UI 通过 ListenableBuilder 监听刷新。
@@ -164,6 +165,8 @@ class AppState extends ChangeNotifier {
   Future<void> loadConfig() async {
     final data = await api.get('/api/config.php');
     config = PublicConfig.fromJson(data);
+    // 用后台下发的运行参数覆盖 App 内置默认值（CDN/镜像/仓库/强更）
+    applyRemoteConfig(config!);
     // 用后台 OIDC Issuer（网站地址）作为服务器地址
     final issuer = config!.oidcIssuer.trim();
     if (issuer.isNotEmpty) {

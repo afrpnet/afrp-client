@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import '../core/app_state.dart';
 import '../core/updater.dart';
 import 'oidc_proxy.dart';
 
@@ -178,13 +179,11 @@ class FrpcManager extends ChangeNotifier {
         arch = 'amd64';
       }
 
-      // 从网站获取 manifest
+      // 从网站获取 manifest（服务器地址取运行时 baseUrl，随后台 OIDC Issuer 动态变化）
       final client = http.Client();
       try {
-        final manifestUrl = Uri.parse(
-          'https://www.afrp.net/download/manifest.json',
-        );
-        final response = await client.get(manifestUrl);
+        final manifestUri = Uri.parse(manifestUrl(appState.baseUrl));
+        final response = await client.get(manifestUri);
         if (response.statusCode != 200) {
           throw StateError('无法下载 manifest (HTTP ${response.statusCode})');
         }

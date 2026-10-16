@@ -13,21 +13,48 @@ class PublicConfig {
     this.logoUrl = '',
     this.logoTextA = '',
     this.logoTextB = '',
+    this.r2BaseUrl = '',
+    this.ghRepo = '',
+    this.ghMirrors = const [],
+    this.frpcRepo = '',
+    this.minVersion = '',
+    this.forceUpdate = false,
+    this.themeColor = '',
   });
 
-  factory PublicConfig.fromJson(Map<String, dynamic> j) => PublicConfig(
-        siteName: (j['site_name'] ?? '').toString(),
-        oidcIssuer: (j['oidc_issuer'] ?? '').toString(),
-        oidcAudience: (j['oidc_audience'] ?? '').toString(),
-        oidcScope: (j['oidc_scope'] ?? '').toString(),
-        tokenEndpoint: (j['token_endpoint'] ?? '').toString(),
-        membershipEnabled: j['membership_enabled'] == true,
-        apiVersion: (j['api_version'] as num?)?.toInt() ?? 1,
-        logoType: (j['logo_type'] ?? '').toString() == 'image' ? 'image' : 'text',
-        logoUrl: (j['logo_url'] ?? '').toString(),
-        logoTextA: (j['logo_text_a'] ?? '').toString(),
-        logoTextB: (j['logo_text_b'] ?? '').toString(),
-      );
+  factory PublicConfig.fromJson(Map<String, dynamic> j) {
+    final rawMirrors = j['gh_mirrors'];
+    final mirrors = <String>[];
+    if (rawMirrors is List) {
+      for (final m in rawMirrors) {
+        final s = m.toString().trim();
+        if (s.isNotEmpty) {
+          mirrors.add(s);
+        }
+      }
+    }
+    return PublicConfig(
+      siteName: (j['site_name'] ?? '').toString(),
+      oidcIssuer: (j['oidc_issuer'] ?? '').toString(),
+      oidcAudience: (j['oidc_audience'] ?? '').toString(),
+      oidcScope: (j['oidc_scope'] ?? '').toString(),
+      tokenEndpoint: (j['token_endpoint'] ?? '').toString(),
+      membershipEnabled: j['membership_enabled'] == true,
+      apiVersion: (j['api_version'] as num?)?.toInt() ?? 1,
+      logoType:
+          (j['logo_type'] ?? '').toString() == 'image' ? 'image' : 'text',
+      logoUrl: (j['logo_url'] ?? '').toString(),
+      logoTextA: (j['logo_text_a'] ?? '').toString(),
+      logoTextB: (j['logo_text_b'] ?? '').toString(),
+      r2BaseUrl: (j['r2_base_url'] ?? '').toString(),
+      ghRepo: (j['gh_repo'] ?? '').toString(),
+      ghMirrors: mirrors,
+      frpcRepo: (j['frpc_repo'] ?? '').toString(),
+      minVersion: (j['min_version'] ?? '').toString(),
+      forceUpdate: j['force_update'] == true,
+      themeColor: (j['theme_color'] ?? '').toString(),
+    );
+  }
 
   final String siteName;
   final String oidcIssuer;
@@ -42,6 +69,15 @@ class PublicConfig {
   final String logoUrl;
   final String logoTextA;
   final String logoTextB;
+
+  /// 后台「APP 设置」下发的运行参数（留空表示沿用 App 内置默认）
+  final String r2BaseUrl;
+  final String ghRepo;
+  final List<String> ghMirrors;
+  final String frpcRepo;
+  final String minVersion;
+  final bool forceUpdate;
+  final String themeColor;
 
   /// App 内展示名称：站点名优先，未设置时用默认名
   String get brandName => siteName.trim().isEmpty ? 'AFRP OIDC' : siteName.trim();

@@ -15,6 +15,15 @@ import 'ui/update_dialogs.dart';
 /// 全局导航 key：启动静默检查等场景下没有页面级 context 时使用
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
+/// 解析 #RRGGBB 主题色；非法或留空时回退默认蓝
+Color _seedColor(String hex) {
+  final m = RegExp(r'^#?([0-9A-Fa-f]{6})$').firstMatch(hex.trim());
+  if (m == null) {
+    return const Color(0xFF1565C0);
+  }
+  return Color(0xFF000000 | int.parse(m.group(1)!, radix: 16));
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (TrayService.supported) {
@@ -98,15 +107,14 @@ class _FrpAppState extends State<FrpApp> {
       listenable: appState,
       builder: (context, _) {
         final brand = appState.config?.brandName ?? 'AFRP OIDC';
+        final seed = _seedColor(appState.config?.themeColor ?? '');
         _syncWindowTitle(brand);
         return MaterialApp(
           title: brand,
           debugShowCheckedModeBanner: false,
           navigatorKey: appNavigatorKey,
           theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(
-              seedColor: const Color(0xFF1565C0),
-            ),
+            colorScheme: ColorScheme.fromSeed(seedColor: seed),
             useMaterial3: true,
           ),
           locale: const Locale('zh', 'CN'),
