@@ -395,7 +395,40 @@ return view.extend({
 				cfg.server_port = String(sv.port || 7000);
 			});
 
-			srvArea.appendChild(sel);
+			var btnRefresh = E('button', { class: 'cbi-button cbi-button-reload', title: _('从网站刷新服务器列表'), style: 'margin-left:8px;' }, [ _('刷新') ]);
+			btnRefresh.addEventListener('click', function() {
+				if (!cfg.username || !cfg.password) {
+					resultDiv.textContent = _('请先登录后再刷新');
+					return;
+				}
+				btnRefresh.disabled = true;
+				btnRefresh.textContent = _('刷新中…');
+				var req = JSON.stringify({ site: lastSite || DEFAULT_BASE, rotate: false });
+				var login = JSON.stringify({ identity: cfg.username, password: cfg.password, device: 'LuCI (OpenWrt)' });
+				fs.write('/tmp/afrp-import.json', req, 384).then(function() {
+					return fs.write('/tmp/afrp-login.json', login, 384);
+				}).then(function() {
+					return fs.exec(IMPORT_ACCOUNT, []);
+				}).then(function(res) {
+					var d = null;
+					try { d = JSON.parse((res.stdout || '').trim()); } catch (e) { d = null; }
+					if (d && d.ok && d.servers && d.servers.length) {
+						lastServers = d.servers;
+						cfg.import_servers = d.servers;
+						renderServers(d.servers, d.site || lastSite, cfg.server_addr);
+						resultDiv.textContent = _('服务器列表已刷新');
+					} else {
+						resultDiv.textContent = _('刷新失败：') + (d && d.error ? d.error : _('未获取到服务器数据'));
+					}
+				}).catch(function(err) {
+					resultDiv.textContent = _('刷新失败：') + err.message;
+				}).then(function() {
+					btnRefresh.disabled = false;
+					btnRefresh.textContent = _('刷新');
+				});
+			});
+
+			srvArea.appendChild(E('div', { style: 'display:flex;align-items:center;gap:8px' }, [ sel, btnRefresh ]));
 		}
 	}
 });
