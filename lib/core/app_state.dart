@@ -20,7 +20,9 @@ class AppState extends ChangeNotifier {
 
   /// 硬编码的兜底引导域名（后台未配置或全部不可用时使用）
   static const List<String> kFallbackBootstrapUrls = [
+    'https://afrp.net',
     'https://www.afrp.net',
+    'https://oidc.afrp.net',
   ];
 
   final SecretStore _secrets;
