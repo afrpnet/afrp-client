@@ -952,9 +952,9 @@ Future<void> _runInstallerAndRestart(File installer, String exePath) async {
 @echo off
 set /a WAITED=0
 :waitloop
-tasklist /fi "PID eq $currentPid" 2>nul | find "$currentPid" >nul
+tasklist /fi "PID eq $currentPid" /fo CSV /nh 2>nul | findstr "$currentPid" >nul
 if errorlevel 1 goto proceed
-rem 最多等 30 秒；旧进程仍不退出则强杀，避免等待循环无限挂起（关不掉的 CMD 窗口）
+rem 最多等 30 秒；旧进程仍不退出则强杀，避免等待循环无限挂起
 if %WAITED% GEQ 30 (
   taskkill /pid $currentPid /f >nul 2>&1
   timeout /t 1 /nobreak >nul
@@ -985,9 +985,9 @@ Future<void> _replacePortableAndRestart(File newBinary) async {
 @echo off
 set /a WAITED=0
 :waitloop
-tasklist /fi "PID eq $currentPid" 2>nul | find "$currentPid" >nul
+tasklist /fi "PID eq $currentPid" /fo CSV /nh 2>nul | findstr "$currentPid" >nul
 if errorlevel 1 goto proceed
-rem 最多等 30 秒；旧进程仍不退出则强杀，避免等待循环无限挂起（关不掉的 CMD 窗口）
+rem 最多等 30 秒；旧进程仍不退出则强杀，避免等待循环无限挂起
 if %WAITED% GEQ 30 (
   taskkill /pid $currentPid /f >nul 2>&1
   timeout /t 1 /nobreak >nul
