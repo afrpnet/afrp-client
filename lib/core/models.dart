@@ -13,6 +13,7 @@ class PublicConfig {
     this.logoUrl = '',
     this.logoTextA = '',
     this.logoTextB = '',
+    this.bootstrapUrls = const [],
     this.r2BaseUrl = '',
     this.ghRepo = '',
     this.ghMirrors = const [],
@@ -33,6 +34,16 @@ class PublicConfig {
         }
       }
     }
+    final rawBootstrap = j['bootstrap_urls'];
+    final bootstrap = <String>[];
+    if (rawBootstrap is List) {
+      for (final u in rawBootstrap) {
+        final s = u.toString().trim();
+        if (s.isNotEmpty) {
+          bootstrap.add(s);
+        }
+      }
+    }
     return PublicConfig(
       siteName: (j['site_name'] ?? '').toString(),
       oidcIssuer: (j['oidc_issuer'] ?? '').toString(),
@@ -46,6 +57,7 @@ class PublicConfig {
       logoUrl: (j['logo_url'] ?? '').toString(),
       logoTextA: (j['logo_text_a'] ?? '').toString(),
       logoTextB: (j['logo_text_b'] ?? '').toString(),
+      bootstrapUrls: bootstrap,
       r2BaseUrl: (j['r2_base_url'] ?? '').toString(),
       ghRepo: (j['gh_repo'] ?? '').toString(),
       ghMirrors: mirrors,
@@ -69,6 +81,9 @@ class PublicConfig {
   final String logoUrl;
   final String logoTextA;
   final String logoTextB;
+
+  /// 后台下发的引导域名列表（App 启动时挨个尝试连接）
+  final List<String> bootstrapUrls;
 
   /// 后台「APP 设置」下发的运行参数（留空表示沿用 App 内置默认）
   final String r2BaseUrl;

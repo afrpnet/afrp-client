@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_client.dart';
@@ -16,6 +17,11 @@ class AppState extends ChangeNotifier {
     : _secrets = secretStore;
 
   static const String defaultBaseUrl = 'https://www.afrp.net';
+
+  /// 硬编码的兜底引导域名（后台未配置或全部不可用时使用）
+  static const List<String> kFallbackBootstrapUrls = [
+    'https://www.afrp.net',
+  ];
 
   final SecretStore _secrets;
   SharedPreferences? _prefs;
@@ -54,6 +60,7 @@ class AppState extends ChangeNotifier {
   static String _secretKey(String username) => 'client_secret_$username';
   static const _kToken = 'api_token';
   static const _kBaseUrl = 'api_base_url';
+  static const _kBootstrapUrls = 'bootstrap_urls';
   static const _kServerId = 'selected_server_id';
 
   bool get hasLocalSecret => (clientSecret ?? '').isNotEmpty;
@@ -72,7 +79,28 @@ class AppState extends ChangeNotifier {
 
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
-    baseUrl = _prefs!.getString(_kBaseUrl) ?? defaultBaseUrl;
+
+    // 引导域名列表：优先用缓存，否则用硬编码兜底
+    final cachedJson = _prefs!.getString(_kBootstrapUrls);
+    List<String> bootstrapUrls;
+    if (cachedJson != null && cachedJson.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(cachedJson);
+        if (decoded is List && decoded.isNotEmpty) {
+          bootstrapUrls = decoded.cast<String>();
+        } else {
+          bootstrapUrls = kFallbackBootstrapUrls;
+        }
+      } catch (_) {
+        bootstrapUrls = kFallbackBootstrapUrls;
+      }
+    } else {
+      bootstrapUrls = kFallbackBootstrapUrls;
+    }
+
+    // 挨个尝试，用第一个能连上的作为 baseUrl
+    baseUrl = await _probeBootstrapUrls(bootstrapUrls);
+
     final token = await _secrets.read(_kToken);
     api = ApiClient(baseUrl: baseUrl, token: token);
     selectedServerId = _prefs!.getInt(_kServerId);
@@ -92,6 +120,26 @@ class AppState extends ChangeNotifier {
         }
       }
     }
+  }
+
+  /// 挨个探测引导域名，返回第一个能连上的；全部失败则返回列表第一个
+  Future<String> _probeBootstrapUrls(List<String> urls) async {
+    final client = http.Client();
+    for (final url in urls) {
+      try {
+        final res = await client
+            .get(Uri.parse('$url/api/config.php'))
+            .timeout(const Duration(seconds: 3));
+        if (res.statusCode == 200) {
+          client.close();
+          return url;
+        }
+      } catch (_) {
+        // 超时或网络错误，继续试下一个
+      }
+    }
+    client.close();
+    return urls.isNotEmpty ? urls.first : defaultBaseUrl;
   }
 
   /* ==================== 登录 / 登出 ==================== */
@@ -167,6 +215,13 @@ class AppState extends ChangeNotifier {
     config = PublicConfig.fromJson(data);
     // 用后台下发的运行参数覆盖 App 内置默认值（CDN/镜像/仓库/强更）
     applyRemoteConfig(config!);
+    // 缓存引导域名列表，下次启动优先用
+    if (config!.bootstrapUrls.isNotEmpty) {
+      await _prefs?.setString(
+        _kBootstrapUrls,
+        jsonEncode(config!.bootstrapUrls),
+      );
+    }
     // 用后台 OIDC Issuer（网站地址）作为服务器地址
     final issuer = config!.oidcIssuer.trim();
     if (issuer.isNotEmpty) {
