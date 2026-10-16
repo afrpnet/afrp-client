@@ -92,7 +92,7 @@ end;
 function RunPs(const Params: String; const Wait: Boolean): Boolean;
 var
   ResultCode: Integer;
-  WaitFlag: Integer;
+  WaitFlag: TExecWait;
 begin
   if Wait then
     WaitFlag := ewWaitUntilTerminated
