@@ -1,7 +1,7 @@
 {
 	"admin/services/afrp": {
 		"title": "AFRP 内网穿透",
-		"order": 61,
+		"order": 0,
 		"action": {
 			"type": "firstchild"
 		},
