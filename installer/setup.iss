@@ -89,11 +89,18 @@ begin
     Result := '-noProfile -ExecutionPolicy Bypass -Command "Remove-MpPreference -ExclusionPath ''' + AppDir + ''', ''' + FrpcDir + ''' -ErrorAction SilentlyContinue; exit 0"';
 end;
 
-function RunPs(const Params: String): Boolean;
+function RunPs(const Params: String; const Wait: Boolean): Boolean;
 var
   ResultCode: Integer;
+  WaitFlag: Integer;
 begin
-  Result := Exec('powershell.exe', Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+  if Wait then
+    WaitFlag := ewWaitUntilTerminated
+  else
+    WaitFlag := ewNoWait;
+  Result := Exec('powershell.exe', Params, '', SW_HIDE, WaitFlag, ResultCode);
+  if Wait then
+    Result := Result and (ResultCode = 0);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
@@ -106,7 +113,7 @@ begin
     ExclOk := False;
     if ExclTried then
     begin
-      ExclOk := RunPs(PsExclusionCmd(True));
+      ExclOk := RunPs(PsExclusionCmd(True), True);
       if ExclOk then
         RegWriteDWordValue(HKA, ExclRegKey, 'DefenderExclAdded', 1)
       else
@@ -133,7 +140,7 @@ begin
   if CurUninstallStep = usUninstall then
     if RegValueExists(HKA, ExclRegKey, 'DefenderExclAdded') then
     begin
-      RunPs(PsExclusionCmd(False));
+      RunPs(PsExclusionCmd(False), False);
       RegDeleteValue(HKA, ExclRegKey, 'DefenderExclAdded');
       RegDeleteKeyIfEmpty(HKA, ExclRegKey);
     end;
