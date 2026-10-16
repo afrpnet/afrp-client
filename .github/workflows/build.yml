@@ -768,6 +768,15 @@ jobs:
           path: |
             openwrt/build.log
             dist/apk-selfcheck.log
+      - name: Upload OpenWrt packages.adb (for opkg source update)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-packages-adb
+          path: |
+            dist/packages.adb
+            dist/luci-app-afrp-*.apk
+          if-no-files-found: warn
       - name: Upload to Release
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
@@ -805,6 +814,13 @@ jobs:
           ls -la
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 下载 OpenWrt packages.adb (artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: openwrt-packages-adb
+          path: dist/
+        continue-on-error: true
 
       - name: 清理旧版本文件
         run: |
