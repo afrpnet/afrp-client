@@ -278,6 +278,15 @@ return view.extend({
 					writeConfig(cfg);
 					renderServers(d.servers, lastSite, cfg.server_addr);
 				}
+
+				/* 登录成功后，同时保存并填充 Client Secret */
+				if (d.secret) {
+					cfg.client_secret = d.secret;
+					writeConfig(cfg);
+				}
+
+				/* 确保密码和 Client Secret 都正确显示 */
+				inpPassword.value = cfg.password || '';
 				renderSecretInput();
 			});
 		}
