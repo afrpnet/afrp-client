@@ -100,8 +100,11 @@ class AppState extends ChangeNotifier {
       bootstrapUrls = kFallbackBootstrapUrls;
     }
 
-    // 挨个尝试，用第一个能连上的作为 baseUrl
-    baseUrl = await _probeBootstrapUrls(bootstrapUrls);
+    // 挨个尝试，用第一个能连上的作为 baseUrl（总超时 10 秒）
+    baseUrl = await _probeBootstrapUrls(bootstrapUrls).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => bootstrapUrls.isNotEmpty ? bootstrapUrls.first : defaultBaseUrl,
+    );
 
     final token = await _secrets.read(_kToken);
     api = ApiClient(baseUrl: baseUrl, token: token);
@@ -136,11 +139,12 @@ class AppState extends ChangeNotifier {
           client.close();
           return url;
         }
-      } catch (_) {
+      } catch (e) {
         // 超时或网络错误，继续试下一个
       }
     }
     client.close();
+    // 全部失败时返回列表第一个，让后续请求去报错
     return urls.isNotEmpty ? urls.first : defaultBaseUrl;
   }
 
