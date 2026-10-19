@@ -942,14 +942,16 @@ Future<void> performAppUpdate(
   }
 }
 
-/// Windows 安装版：临时 bat 等本进程退出 → 静默安装 → 装完自动重启 exe
-/// Inno Setup 静默安装本身不会重开程序，故用包装脚本在 setup.exe 返回后 start 目标 exe。
+/// Windows 安装版：临时 bat 等本进程退出 → 静默安装 → 从注册表读取安装路径并重启
+/// Inno Setup [Run] 段有 skipifsilent，静默安装不会自动启动，故由 bat 负责重启。
 Future<void> _runInstallerAndRestart(File installer, String exePath) async {
   final tmpDir = await getTemporaryDirectory();
   final bat = File(
     '${tmpDir.path}${Platform.pathSeparator}afrp_update_${DateTime.now().millisecondsSinceEpoch}.bat',
   );
   final currentPid = pid;
+  // AppId 与 installer/setup.iss 中的 AppId 一致
+  const appId = 'A6C5E7B2-3F41-4D8E-9B07-5C2A8F16D9E3';
   await bat.writeAsString('''
 @echo off
 set /a WAITED=0
@@ -968,7 +970,14 @@ goto waitloop
 :proceed
 start /wait "" "${installer.path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS
 timeout /t 2 /nobreak >nul
-start "" "$exePath"
+rem 从注册表读取 Inno Setup 安装路径
+for /f "tokens=2*" %%A in ('reg query "HKLM\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\{$appId}_is1" /v InstallLocation 2^>nul') do set "INSTDIR=%%B"
+if defined INSTDIR (
+  if exist "%INSTDIR%\\afrp_oidc.exe" start "" "%INSTDIR%\\afrp_oidc.exe"
+) else (
+  rem 注册表未找到，回退到当前 exe 路径（便携版场景）
+  start "" "$exePath"
+)
 del "%~f0.vbs" 2>nul
 del "%~f0"
 ''', flush: true);
