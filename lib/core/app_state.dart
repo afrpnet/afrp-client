@@ -106,6 +106,7 @@ class AppState extends ChangeNotifier {
       const Duration(seconds: 10),
       onTimeout: () => bootstrapUrls.isNotEmpty ? bootstrapUrls.first : defaultBaseUrl,
     );
+    debugPrint('Bootstrap complete, baseUrl=$baseUrl');
 
     final token = await _secrets.read(_kToken);
     api = ApiClient(baseUrl: baseUrl, token: token);
