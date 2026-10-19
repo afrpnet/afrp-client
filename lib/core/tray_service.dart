@@ -1,7 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -38,12 +39,36 @@ class TrayService with TrayListener, WindowListener {
     }
     _inited = true;
     await windowManager.ensureInitialized();
-    final prefs = await SharedPreferences.getInstance();
-    _closeToTray = prefs.getBool(_kCloseToTray) ?? true;
-    _minimizeToTray = prefs.getBool(_kMinimizeToTray) ?? false;
+    final data = await _readPrefs();
+    _closeToTray = data[_kCloseToTray] as bool? ?? true;
+    _minimizeToTray = data[_kMinimizeToTray] as bool? ?? false;
     await windowManager.setPreventClose(true);
     windowManager.addListener(this);
     await _initTray();
+  }
+
+  Future<File> _prefsFile() async {
+    final appDir = await getApplicationDocumentsDirectory();
+    return File('${appDir.path}/.prefs.json');
+  }
+
+  Future<Map<String, dynamic>> _readPrefs() async {
+    final f = await _prefsFile();
+    if (f.existsSync()) {
+      try {
+        final content = await f.readAsString();
+        final decoded = jsonDecode(content);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  Future<void> _writePrefs(Map<String, dynamic> data) async {
+    final f = await _prefsFile();
+    await f.writeAsString(jsonEncode(data));
   }
 
   Future<void> _initTray() async {
@@ -85,14 +110,16 @@ class TrayService with TrayListener, WindowListener {
 
   Future<void> setCloseToTray(bool value) async {
     _closeToTray = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kCloseToTray, value);
+    final data = await _readPrefs();
+    data[_kCloseToTray] = value;
+    await _writePrefs(data);
   }
 
   Future<void> setMinimizeToTray(bool value) async {
     _minimizeToTray = value;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(_kMinimizeToTray, value);
+    final data = await _readPrefs();
+    data[_kMinimizeToTray] = value;
+    await _writePrefs(data);
   }
 
   /// 从托盘恢复并聚焦主窗口

@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'api_client.dart';
 import 'autostart.dart';
@@ -27,7 +28,8 @@ class AppState extends ChangeNotifier {
   ];
 
   final SecretStore _secrets;
-  SharedPreferences? _prefs;
+  File? _prefsFile;
+  Map<String, dynamic> _prefsData = {};
 
   /// 服务器地址（由 config.oidcIssuer 自动设定，默认生产站）
   String baseUrl = defaultBaseUrl;
@@ -81,10 +83,22 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> init() async {
-    _prefs = await SharedPreferences.getInstance();
+    final appDir = await getApplicationDocumentsDirectory();
+    _prefsFile = File('${appDir.path}/.prefs.json');
+    if (_prefsFile!.existsSync()) {
+      try {
+        final content = await _prefsFile!.readAsString();
+        final decoded = jsonDecode(content);
+        if (decoded is Map<String, dynamic>) {
+          _prefsData = decoded;
+        }
+      } catch (_) {
+        _prefsData = {};
+      }
+    }
 
     // 引导域名列表：优先用缓存，否则用硬编码兜底
-    final cachedJson = _prefs!.getString(_kBootstrapUrls);
+    final cachedJson = _prefsData[_kBootstrapUrls] as String?;
     List<String> bootstrapUrls;
     if (cachedJson != null && cachedJson.isNotEmpty) {
       try {
@@ -110,8 +124,8 @@ class AppState extends ChangeNotifier {
 
     final token = await _secrets.read(_kToken);
     api = ApiClient(baseUrl: baseUrl, token: token);
-    selectedServerId = _prefs!.getInt(_kServerId);
-    autoConnectOnLaunch = _prefs!.getBool(_kAutoConnect) ?? true;
+    selectedServerId = _prefsData[_kServerId] as int?;
+    autoConnectOnLaunch = _prefsData[_kAutoConnect] as bool? ?? true;
     loggedIn = (token ?? '').isNotEmpty;
     
     // 加载服务器配置（logo、主题色等）
@@ -136,6 +150,12 @@ class AppState extends ChangeNotifier {
           await logout(silent: true);
         }
       }
+    }
+  }
+
+  Future<void> _savePrefs() async {
+    if (_prefsFile != null) {
+      await _prefsFile!.writeAsString(jsonEncode(_prefsData));
     }
   }
 
@@ -234,10 +254,8 @@ class AppState extends ChangeNotifier {
     applyRemoteConfig(config!);
     // 缓存引导域名列表，下次启动优先用
     if (config!.bootstrapUrls.isNotEmpty) {
-      await _prefs?.setString(
-        _kBootstrapUrls,
-        jsonEncode(config!.bootstrapUrls),
-      );
+      _prefsData[_kBootstrapUrls] = jsonEncode(config!.bootstrapUrls);
+      await _savePrefs();
     }
     // 用后台 OIDC Issuer（网站地址）作为服务器地址
     final issuer = config!.oidcIssuer.trim();
@@ -247,7 +265,8 @@ class AppState extends ChangeNotifier {
         final issuerBase = '${uri.scheme}://${uri.authority}';
         if (issuerBase != baseUrl) {
           baseUrl = issuerBase;
-          await _prefs?.setString(_kBaseUrl, baseUrl);
+          _prefsData[_kBaseUrl] = baseUrl;
+          await _savePrefs();
           api.baseUrl = baseUrl;
         }
       }
@@ -274,7 +293,8 @@ class AppState extends ChangeNotifier {
         !servers.any((s) => s.id == selectedServerId)) {
       selectedServerId = servers.isEmpty ? null : servers.first.id;
       if (selectedServerId != null) {
-        await _prefs?.setInt(_kServerId, selectedServerId!);
+        _prefsData[_kServerId] = selectedServerId!;
+        await _savePrefs();
       }
     }
     notifyListeners();
@@ -282,7 +302,8 @@ class AppState extends ChangeNotifier {
 
   Future<void> selectServer(int id) async {
     selectedServerId = id;
-    await _prefs?.setInt(_kServerId, id);
+    _prefsData[_kServerId] = id;
+    await _savePrefs();
     notifyListeners();
   }
 
@@ -488,7 +509,7 @@ class AppState extends ChangeNotifier {
   static String _tunnelKey(int serverId) => 'tunnels_$serverId';
 
   List<Tunnel> tunnelsOf(int serverId) {
-    final raw = _prefs?.getString(_tunnelKey(serverId));
+    final raw = _prefsData[_tunnelKey(serverId)] as String?;
     if (raw == null || raw.isEmpty) {
       return [];
     }
@@ -503,10 +524,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveTunnels(int serverId, List<Tunnel> tunnels) async {
-    await _prefs?.setString(
-      _tunnelKey(serverId),
-      jsonEncode(tunnels.map((t) => t.toJson()).toList()),
-    );
+    _prefsData[_tunnelKey(serverId)] =
+        jsonEncode(tunnels.map((t) => t.toJson()).toList());
+    await _savePrefs();
     notifyListeners();
   }
 
@@ -519,7 +539,8 @@ class AppState extends ChangeNotifier {
 
   Future<void> setAutoConnectOnLaunch(bool v) async {
     autoConnectOnLaunch = v;
-    await _prefs?.setBool(_kAutoConnect, v);
+    _prefsData[_kAutoConnect] = v;
+    await _savePrefs();
     notifyListeners();
   }
 
@@ -531,11 +552,12 @@ class AppState extends ChangeNotifier {
     if (!bootAutostartSupported) {
       return;
     }
-    if (_prefs?.getBool(_kAutostartInit) ?? false) {
+    if (_prefsData[_kAutostartInit] as bool? ?? false) {
       return;
     }
     await setBootAutostart(true);
-    await _prefs?.setBool(_kAutostartInit, true);
+    _prefsData[_kAutostartInit] = true;
+    await _savePrefs();
   }
 }
 
