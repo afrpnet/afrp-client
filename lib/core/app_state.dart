@@ -112,6 +112,14 @@ class AppState extends ChangeNotifier {
     selectedServerId = _prefs!.getInt(_kServerId);
     autoConnectOnLaunch = _prefs!.getBool(_kAutoConnect) ?? true;
     loggedIn = (token ?? '').isNotEmpty;
+    
+    // 加载服务器配置（logo、主题色等）
+    try {
+      await loadConfig();
+    } catch (_) {
+      // 配置加载失败不阻塞启动
+    }
+    
     booted = true;
     notifyListeners();
 
