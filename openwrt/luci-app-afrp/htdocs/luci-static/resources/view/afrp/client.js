@@ -179,7 +179,7 @@ return view.extend({
 			logoElement,
 			E('h2', {}, [
 				_('AFRP 内网穿透'),
-				E('small', { style: 'margin-left:8px;color:#888;font-weight:normal' }, ' v1.3.5')
+				E('small', { style: 'margin-left:8px;color:#888;font-weight:normal' }, ' v1.3.6')
 			]),
 			E('p', { class: 'cbi-map-descr' }, [
 				_('登录官网'),
