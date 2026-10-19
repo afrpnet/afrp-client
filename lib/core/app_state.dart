@@ -116,7 +116,9 @@ class AppState extends ChangeNotifier {
     // 加载服务器配置（logo、主题色等）
     try {
       await loadConfig();
-    } catch (_) {
+      debugPrint('Config loaded: site_name=${config?.siteName}, logo=${config?.logoUrl}');
+    } catch (e) {
+      debugPrint('Config load failed: $e');
       // 配置加载失败不阻塞启动
     }
     
