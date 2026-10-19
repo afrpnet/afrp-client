@@ -127,27 +127,42 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// 挨个探测引导域名，返回第一个能连上的；全部失败则返回列表第一个
+  /// 并行探测引导域名，返回第一个成功的；全部失败则返回列表第一个
   Future<String> _probeBootstrapUrls(List<String> urls) async {
-    for (final url in urls) {
-      http.Client? client;
-      try {
-        client = http.Client();
-        final res = await client
-            .get(Uri.parse('$url/api/config.php'))
-            .timeout(const Duration(seconds: 3));
-        if (res.statusCode == 200) {
-          client.close();
-          return url;
-        }
-        client.close();
-      } catch (e) {
-        // 超时或网络错误，确保关闭 client 后继续试下一个
-        client?.close();
-      }
+    if (urls.isEmpty) {
+      return defaultBaseUrl;
     }
-    // 全部失败时返回列表第一个，让后续请求去报错
-    return urls.isNotEmpty ? urls.first : defaultBaseUrl;
+    
+    // 并行探测所有 URL，使用 Completer 在第一个成功时立即返回
+    final completer = Completer<String>();
+    var completedCount = 0;
+    
+    for (final url in urls) {
+      // 不等待，直接发起请求
+      () async {
+        http.Client? client;
+        try {
+          client = http.Client();
+          final res = await client
+              .get(Uri.parse('$url/api/config.php'))
+              .timeout(const Duration(seconds: 5));
+          client.close();
+          if (res.statusCode == 200 && !completer.isCompleted) {
+            completer.complete(url);
+          }
+        } catch (_) {
+          client?.close();
+        } finally {
+          completedCount++;
+          // 所有 URL 都失败时，返回列表第一个
+          if (completedCount == urls.length && !completer.isCompleted) {
+            completer.complete(urls.first);
+          }
+        }
+      }();
+    }
+    
+    return completer.future;
   }
 
   /* ==================== 登录 / 登出 ==================== */

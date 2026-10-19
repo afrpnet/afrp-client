@@ -33,7 +33,7 @@ class ApiClient {
   String? token;
 
   final http.Client _client = http.Client();
-  static const Duration _timeout = Duration(seconds: 20);
+  static const Duration _timeout = Duration(seconds: 10);
 
   Future<Map<String, dynamic>> get(String path, {Map<String, String>? query}) {
     final uri = Uri.parse('$baseUrl$path').replace(
