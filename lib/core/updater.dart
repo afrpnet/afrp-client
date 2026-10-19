@@ -925,6 +925,8 @@ Future<void> performAppUpdate(
       );
       await _replacePortableAndRestart(binary);
     }
+    // 等待更新脚本启动后再退出，避免脚本还没运行程序就退出了
+    await Future.delayed(const Duration(seconds: 2));
     exit(0);
   }
 
