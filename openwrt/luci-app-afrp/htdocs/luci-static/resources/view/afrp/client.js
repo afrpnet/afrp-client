@@ -180,12 +180,12 @@ return view.extend({
 		pageChildren.push(
 			E('h2', {}, [
 				_('AFRP 内网穿透'),
-				E('small', { style: 'margin-left:8px;color:#888;font-weight:normal' }, ' v1.3.8')
+				E('small', { style: 'margin-left:8px;color:#888;font-weight:normal' }, ' v1.3.9')
 			]),
 			E('p', { class: 'cbi-map-descr' }, [
-				_('登录官网'),
+				_('登录官网【'),
 				E('a', { href: 'https://www.afrp.net', target: '_blank' }, 'www.afrp.net'),
-				_('账号后选择服务器，所有配置自动填入。')
+				_('】账号后选择服务器，所有配置自动填入。')
 			]),
 			formSection,
 			actionCard
