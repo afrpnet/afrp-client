@@ -128,42 +128,24 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// 并行探测引导域名，返回第一个成功的；全部失败则返回列表第一个
+  /// 挨个探测引导域名，返回第一个能连上的；全部失败则返回列表第一个
   Future<String> _probeBootstrapUrls(List<String> urls) async {
-    if (urls.isEmpty) {
-      return defaultBaseUrl;
-    }
-    
-    // 并行探测所有 URL，使用 Completer 在第一个成功时立即返回
-    final completer = Completer<String>();
-    var completedCount = 0;
-    
     for (final url in urls) {
-      // 不等待，直接发起请求
-      () async {
-        http.Client? client;
-        try {
-          client = http.Client();
-          final res = await client
-              .get(Uri.parse('$url/api/config.php'))
-              .timeout(const Duration(seconds: 5));
-          client.close();
-          if (res.statusCode == 200 && !completer.isCompleted) {
-            completer.complete(url);
-          }
-        } catch (_) {
-          client?.close();
-        } finally {
-          completedCount++;
-          // 所有 URL 都失败时，返回列表第一个
-          if (completedCount == urls.length && !completer.isCompleted) {
-            completer.complete(urls.first);
-          }
+      http.Client? client;
+      try {
+        client = http.Client();
+        final res = await client
+            .get(Uri.parse('$url/api/config.php'))
+            .timeout(const Duration(seconds: 2));
+        client.close();
+        if (res.statusCode == 200) {
+          return url;
         }
-      }();
+      } catch (_) {
+        client?.close();
+      }
     }
-    
-    return completer.future;
+    return urls.isNotEmpty ? urls.first : defaultBaseUrl;
   }
 
   /* ==================== 登录 / 登出 ==================== */
