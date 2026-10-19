@@ -13,6 +13,8 @@ class PublicConfig {
     this.logoUrl = '',
     this.logoTextA = '',
     this.logoTextB = '',
+    this.bootstrapPageType = 'logo',
+    this.bootstrapPageContent = '',
     this.bootstrapUrls = const [],
     this.r2BaseUrl = '',
     this.ghRepo = '',
@@ -57,6 +59,8 @@ class PublicConfig {
       logoUrl: (j['logo_url'] ?? '').toString(),
       logoTextA: (j['logo_text_a'] ?? '').toString(),
       logoTextB: (j['logo_text_b'] ?? '').toString(),
+      bootstrapPageType: (j['bootstrap_page_type'] ?? 'logo').toString(),
+      bootstrapPageContent: (j['bootstrap_page_content'] ?? '').toString(),
       bootstrapUrls: bootstrap,
       r2BaseUrl: (j['r2_base_url'] ?? '').toString(),
       ghRepo: (j['gh_repo'] ?? '').toString(),
@@ -81,6 +85,10 @@ class PublicConfig {
   final String logoUrl;
   final String logoTextA;
   final String logoTextB;
+
+  /// 后台「APP 设置」的引导页配置：none（无）| logo（显示 Logo）| text（自定义文字）| custom（自定义 HTML）
+  final String bootstrapPageType;
+  final String bootstrapPageContent;
 
   /// 后台下发的引导域名列表（App 启动时挨个尝试连接）
   final List<String> bootstrapUrls;

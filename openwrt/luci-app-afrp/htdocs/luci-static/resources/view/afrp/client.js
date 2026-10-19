@@ -59,6 +59,8 @@ return view.extend({
 		var logoTextA = '';
 		var logoTextB = '';
 		var siteName = '';
+		var bootstrapPageType = 'logo';
+		var bootstrapPageContent = '';
 		return fs.exec('/sbin/uclient-fetch', ['-q', '-O', '-', DEFAULT_BASE + '/api/config.php']).then(function(res) {
 			try {
 				var data = JSON.parse((res.stdout || '').trim());
@@ -68,6 +70,8 @@ return view.extend({
 					logoTextA = data.logo_text_a || '';
 					logoTextB = data.logo_text_b || '';
 					siteName = data.site_name || '';
+					bootstrapPageType = data.bootstrap_page_type || 'logo';
+					bootstrapPageContent = data.bootstrap_page_content || '';
 					if (logoUrl && logoUrl.startsWith('/')) {
 						logoUrl = DEFAULT_BASE + logoUrl;
 					}
@@ -158,21 +162,37 @@ return view.extend({
 		]);
 
 		var logoElement = null;
-		if (logoType === 'image' && logoUrl) {
-			logoElement = E('div', { style: 'text-align:center;margin-bottom:16px' }, [
-				E('img', { src: logoUrl, style: 'max-height:64px;max-width:200px' })
+		if (bootstrapPageType === 'none') {
+			// 不显示引导页内容
+			logoElement = null;
+		} else if (bootstrapPageType === 'text' && bootstrapPageContent) {
+			// 显示自定义文字
+			logoElement = E('div', { style: 'text-align:center;margin-bottom:16px;padding:16px 0' }, [
+				E('p', { style: 'font-size:16px;line-height:1.6' }, [bootstrapPageContent])
 			]);
-		} else if (logoType === 'text' && logoTextA) {
-			logoElement = E('div', { style: 'text-align:center;margin-bottom:16px' }, [
-				E('span', { style: 'font-size:32px;font-weight:bold;color:#FF7452;font-family:Comfortaa,sans-serif' }, [
-					logoTextA,
-					logoTextB ? E('span', { style: 'color:#1CC88A' }, [logoTextB]) : null
-				])
+		} else if (bootstrapPageType === 'custom' && bootstrapPageContent) {
+			// 显示自定义 HTML（简化：直接显示文本）
+			logoElement = E('div', { style: 'text-align:center;margin-bottom:16px;padding:16px 0' }, [
+				E('p', { style: 'font-size:16px;line-height:1.6' }, [bootstrapPageContent])
 			]);
-		} else if (siteName) {
-			logoElement = E('div', { style: 'text-align:center;margin-bottom:16px' }, [
-				E('span', { style: 'font-size:24px;font-weight:bold' }, [siteName])
-			]);
+		} else if (bootstrapPageType === 'logo' || bootstrapPageType === '') {
+			// 显示 Logo（原有逻辑）
+			if (logoType === 'image' && logoUrl) {
+				logoElement = E('div', { style: 'text-align:center;margin-bottom:16px' }, [
+					E('img', { src: logoUrl, style: 'max-height:64px;max-width:200px' })
+				]);
+			} else if (logoType === 'text' && logoTextA) {
+				logoElement = E('div', { style: 'text-align:center;margin-bottom:16px' }, [
+					E('span', { style: 'font-size:32px;font-weight:bold;color:#FF7452;font-family:Comfortaa,sans-serif' }, [
+						logoTextA,
+						logoTextB ? E('span', { style: 'color:#1CC88A' }, [logoTextB]) : null
+					])
+				]);
+			} else if (siteName) {
+				logoElement = E('div', { style: 'text-align:center;margin-bottom:16px' }, [
+					E('span', { style: 'font-size:24px;font-weight:bold' }, [siteName])
+				]);
+			}
 		}
 
 		var page = E('div', { class: 'cbi-map' }, [

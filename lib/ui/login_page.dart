@@ -155,8 +155,52 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  /// 品牌区：优先后台设置的图片 Logo → 双色文字 Logo（afrp.net 风格）→ 站点名
+  /// 品牌区：根据后台引导页配置显示内容
   Widget _brand(ThemeData theme, PublicConfig? config) {
+    if (config == null) {
+      return _textBrand(theme, config);
+    }
+
+    // 根据 bootstrap_page_type 决定显示内容
+    switch (config.bootstrapPageType) {
+      case 'none':
+        // 不显示引导页内容
+        return const SizedBox.shrink();
+      case 'text':
+        // 显示自定义文字
+        if (config.bootstrapPageContent.isNotEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Text(
+              config.bootstrapPageContent,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge,
+            ),
+          );
+        }
+        return _textBrand(theme, config);
+      case 'custom':
+        // 显示自定义 HTML（简化处理：直接显示文本）
+        if (config.bootstrapPageContent.isNotEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: SelectableText(
+              config.bootstrapPageContent,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge,
+            ),
+          );
+        }
+        return _textBrand(theme, config);
+      case 'logo':
+      default:
+        // 显示 Logo（原有逻辑）
+        return _logoBrand(theme, config);
+    }
+  }
+
+  /// Logo 品牌区：优先后台设置的图片 Logo → 双色文字 Logo → 站点名
+  Widget _logoBrand(ThemeData theme, PublicConfig? config) {
     if (config != null && config.hasImageLogo) {
       return Column(
         children: [
