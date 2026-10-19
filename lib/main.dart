@@ -54,6 +54,11 @@ class _FrpAppState extends State<FrpApp> {
         await autoConnectFrpc();
       }
       await _silentAppUpdateCheck();
+    }).catchError((e, stack) {
+      debugPrint('App init failed: $e\n$stack');
+      // 即使初始化失败也要标记为已启动，让用户看到登录页而不是无限转圈
+      appState.booted = true;
+      appState.notifyListeners();
     });
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {

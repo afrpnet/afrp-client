@@ -130,23 +130,20 @@ class AppState extends ChangeNotifier {
   /// 挨个探测引导域名，返回第一个能连上的；全部失败则返回列表第一个
   Future<String> _probeBootstrapUrls(List<String> urls) async {
     for (final url in urls) {
+      http.Client? client;
       try {
-        // 使用独立的 client 和更短的超时（每个 URL 最多 3 秒）
-        final client = http.Client();
-        try {
-          final res = await client
-              .get(Uri.parse('$url/api/config.php'))
-              .timeout(const Duration(seconds: 3));
+        client = http.Client();
+        final res = await client
+            .get(Uri.parse('$url/api/config.php'))
+            .timeout(const Duration(seconds: 3));
+        if (res.statusCode == 200) {
           client.close();
-          if (res.statusCode == 200) {
-            return url;
-          }
-        } catch (_) {
-          client.close();
-          rethrow;
+          return url;
         }
+        client.close();
       } catch (e) {
-        // 超时或网络错误，继续试下一个
+        // 超时或网络错误，确保关闭 client 后继续试下一个
+        client?.close();
       }
     }
     // 全部失败时返回列表第一个，让后续请求去报错
