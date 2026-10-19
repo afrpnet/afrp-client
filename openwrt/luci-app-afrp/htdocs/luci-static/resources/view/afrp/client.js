@@ -53,6 +53,25 @@ return view.extend({
 		var lastSite = DEFAULT_BASE;
 		var currentUsername = '';
 
+		/* ---------- 获取网站配置（Logo 等） ---------- */
+		var logoUrl = '';
+		return fs.exec('/sbin/uclient-fetch', ['-q', '-O', '-', DEFAULT_BASE + '/api/config.php']).then(function(res) {
+			try {
+				var data = JSON.parse((res.stdout || '').trim());
+				if (data && data.logo) {
+					logoUrl = data.logo;
+					if (logoUrl.startsWith('/')) {
+						logoUrl = DEFAULT_BASE + logoUrl;
+					}
+				}
+			} catch (e) {}
+			return renderPage();
+		}).catch(function() {
+			return renderPage();
+		});
+
+		function renderPage() {
+
 		/* ---------- DOM 元素 ---------- */
 
 		var chkEnabled = E('input', { type: 'checkbox' });
@@ -130,9 +149,21 @@ return view.extend({
 			])
 		]);
 
+		var logoElement = logoUrl ? E('div', { style: 'text-align:center;margin-bottom:16px' }, [
+			E('img', { src: logoUrl, style: 'max-height:64px;max-width:200px' })
+		]) : null;
+
 		var page = E('div', { class: 'cbi-map' }, [
-			E('h2', {}, [ _('AFRP 内网穿透') ]),
-			E('p', { class: 'cbi-map-descr' }, [ _('登录官网账号后选择服务器，所有配置自动填入。') ]),
+			logoElement,
+			E('h2', {}, [
+				_('AFRP 内网穿透'),
+				E('small', { style: 'margin-left:8px;color:#888;font-weight:normal' }, ' v1.2.2')
+			]),
+			E('p', { class: 'cbi-map-descr' }, [
+				_('登录官网'),
+				E('a', { href: 'https://www.afrp.net', target: '_blank' }, 'www.afrp.net'),
+				_('账号后选择服务器，所有配置自动填入。')
+			]),
 			formSection,
 			actionCard
 		]);
@@ -433,5 +464,6 @@ return view.extend({
 
 			srvArea.appendChild(E('div', { style: 'display:flex;align-items:center;gap:8px' }, [ sel, btnRefresh ]));
 		}
+		} // end renderPage
 	}
 });
