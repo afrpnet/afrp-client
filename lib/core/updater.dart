@@ -15,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.20';
+const String kAppVersion = '1.3.21';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -535,6 +535,36 @@ String _sourceFileName(String url, String fallback) {
   return fallback;
 }
 
+/// 清理更新临时目录里的陈旧文件
+///
+/// 每次更新下载的安装包/内核都会留在临时目录里，攒多了既占空间，
+/// 未签名的旧安装包长时间躺在 Temp 下也容易被安全软件当成可疑文件处理。
+/// 只删超过 [maxAge] 的文件，正在用的（刚下载的）不会被动到。
+Future<void> cleanupUpdateTempDir({
+  Duration maxAge = const Duration(days: 1),
+}) async {
+  try {
+    final tmpDir = await getTemporaryDirectory();
+    final dir = Directory(
+      '${tmpDir.path}${Platform.pathSeparator}afrp_updates',
+    );
+    if (!dir.existsSync()) {
+      return;
+    }
+    final now = DateTime.now();
+    for (final e in dir.listSync()) {
+      if (e is! File) {
+        continue;
+      }
+      try {
+        if (now.difference(e.statSync().modified) > maxAge) {
+          e.deleteSync();
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+}
+
 /// 下载条目到临时目录并校验 SHA-256（清单未提供 sha256 时跳过校验）
 /// 支持多源回退：R2（站内镜像）→ 清单其它镜像 → 条目主地址，GitHub 地址还会展开官方 + 代理
 Future<File> downloadUpdateFile(
@@ -611,6 +641,7 @@ Future<File> downloadUpdateFile(
   if (!dir.existsSync()) {
     dir.createSync(recursive: true);
   }
+  await cleanupUpdateTempDir();
 
   final c = client ?? http.Client();
   String lastErr = '';

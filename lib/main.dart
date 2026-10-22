@@ -50,6 +50,7 @@ class _FrpAppState extends State<FrpApp> {
     appState.init().then((_) async {
       await appState.ensureBootAutostartDefault();
       await frpcManager.refreshInstalledVersion();
+      await cleanupUpdateTempDir();
       if (appState.autoConnectOnLaunch) {
         await autoConnectFrpc();
       }
