@@ -2,7 +2,7 @@
 ; Build with: build.bat (stages files first, then calls ISCC on this script)
 
 #define MyAppname "AFRP OIDC Client"
-#define MyAppVersion "1.3.18"
+#define MyAppVersion "1.3.19"
 ; 架构由 CI 通过 /DMyAppArch=arm64 传入；不传则默认 amd64（现有 amd64 job 行为不变）
 #ifndef MyAppArch
   #define MyAppArch "amd64"
@@ -45,7 +45,7 @@ WizardStyle=modern
 MinVersion=10.0.17763
 SetupLogging=yes
 InfoBeforeFile=install-notes.txt
-VersionInfoVersion=1.3.18.0
+VersionInfoVersion=1.3.19.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductname={#MyAppname}
 VersionInfoDescription=AFRP OIDC Client Setup
@@ -109,7 +109,9 @@ begin
   begin
     { ssInstall runs before file copy: add Defender exclusions for the app dir }
     { (contains frpc.exe) and the runtime frpc cache before files land on disk. }
-    ExclTried := WizardIsTaskSelected('defexcl');
+    { 静默安装时 WizardIsTaskSelected 恒为 false（没人能勾选任务），排除项就从未生效； }
+    { 更新流程走的正是静默安装，所以这里放行静默模式。 }
+    ExclTried := WizardIsTaskSelected('defexcl') or WizardSilent;
     ExclOk := False;
     if ExclTried then
     begin

@@ -84,6 +84,12 @@ jobs:
           cp -r build/windows/x64/runner/Release/* "$STAGE/"
           rm -rf "$STAGE/data/flutter_assets/assets/frpc/linux"
           rm -rf "$STAGE/data/flutter_assets/assets/frpc/macos"
+      - name: Sign app binary (optional)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tool/sign-windows.ps1 -Path 'build/installer/staging/afrp_oidc.exe'
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PWD: ${{ secrets.WINDOWS_CERT_PWD }}
       - name: Install Inno Setup
         run: choco install innosetup -y
       - name: Build installer
@@ -91,6 +97,12 @@ jobs:
         run: |
           $VER = (Get-Content pubspec.yaml | Select-String '^version:' | ForEach-Object { ($_ -replace '^version:\s+([0-9]+\.[0-9]+\.[0-9]+).*','$1') })
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$VER installer\setup.iss
+      - name: Sign installer (optional)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tool/sign-windows.ps1 -Path 'build/installer/output/afrp-oidc-client_*_windows_amd64_setup.exe'
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PWD: ${{ secrets.WINDOWS_CERT_PWD }}
       - name: Collect installer
         shell: bash
         run: |
@@ -152,6 +164,12 @@ jobs:
           cp -r build/windows/arm64/runner/Release/* "$STAGE/"
           rm -rf "$STAGE/data/flutter_assets/assets/frpc/linux"
           rm -rf "$STAGE/data/flutter_assets/assets/frpc/macos"
+      - name: Sign app binary (optional)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tool/sign-windows.ps1 -Path 'build/installer/staging/afrp_oidc.exe'
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PWD: ${{ secrets.WINDOWS_CERT_PWD }}
       - name: Install Inno Setup
         run: choco install innosetup -y
       - name: Build installer (arm64)
@@ -159,6 +177,12 @@ jobs:
         run: |
           $VER = (Get-Content pubspec.yaml | Select-String '^version:' | ForEach-Object { ($_ -replace '^version:\s+([0-9]+\.[0-9]+\.[0-9]+).*','$1') })
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$VER /DMyAppArch=arm64 installer\setup.iss
+      - name: Sign installer (optional)
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tool/sign-windows.ps1 -Path 'build/installer/output/afrp-oidc-client_*_windows_arm64_setup.exe'
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PWD: ${{ secrets.WINDOWS_CERT_PWD }}
       - name: Collect installer
         shell: bash
         run: |

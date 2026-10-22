@@ -15,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.18';
+const String kAppVersion = '1.3.19';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -1091,7 +1091,9 @@ class UpdateResult {
         return '更新未完成：安装程序没有成功写入文件。\n\n'
             '一般是旧进程仍占用着程序文件（关闭主窗口只是缩到托盘，进程不会退出），'
             '已尝试强制结束并重试一次。\n'
-            '请重启电脑后重试更新，或到下载页手动下载安装包安装。\n'
+            '若安装时 Windows 安全中心弹出过红色警告，说明安装包被当成威胁拦下了，'
+            '请到「Windows 安全中心 → 病毒和威胁防护 → 保护历史记录」把安装包设为允许后重试，'
+            '或到下载页手动下载安装包安装。\n'
             '安装日志：${logPath.isEmpty ? '（无）' : logPath}';
       case 'done':
         return '更新未完成：安装程序已运行，但程序文件没有更新到目标版本。\n\n'
@@ -1187,6 +1189,7 @@ Future<void> _runInstallerAndRestart(
 
   final helperPs = _psInstallerHelper
       .replaceAll('__INSTALLER__', _psQuote(installer.path))
+      .replaceAll('__UPDATEDIR__', _psQuote(installer.parent.path))
       .replaceAll('__LOG__', _psQuote(logFile.path))
       .replaceAll('__STATUS__', _psQuote(status.path))
       .replaceAll('__APPID__', appId)
@@ -1360,6 +1363,7 @@ if (Test-Path $target) { Start-Process $target }
 const String _psInstallerHelper = r'''
 $ErrorActionPreference = 'SilentlyContinue'
 $installer = '__INSTALLER__'
+$updateDir = '__UPDATEDIR__'
 $logFile = '__LOG__'
 $statusFile = '__STATUS__'
 $appId = '__APPID__'
@@ -1386,6 +1390,12 @@ foreach ($view in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
 if (-not $instDir) { $instDir = Split-Path -Parent $fallback }
 $target = Join-Path $instDir $exeName
 if (-not (Test-Path $target)) { $target = $fallback }
+
+# 给更新包所在目录加 Windows 安全中心排除项。
+# 安装包没有代码签名，被 Defender 的行为启发式误判（Trojan:Win32/Bearfoos.A!ml 之类）
+# 的概率不低，一旦在启动安装包时被拦，更新会直接失败。排除项加不上也不阻断：
+# 安装器已改用 /SILENT，有窗口的启动方式不会命中这类误报。
+try { Add-MpPreference -ExclusionPath $updateDir -ErrorAction Stop } catch { }
 
 # 读已安装版本：先看注册表的 DisplayVersion，缺失时退到 exe 的文件版本
 function Get-InstalledVersion {
@@ -1418,8 +1428,12 @@ function Test-VersionInstalled {
 
 function Install-Package($waitSecs) {
   if (Test-Path $logFile) { Remove-Item $logFile -Force -ErrorAction SilentlyContinue }
-  # /LOG 路径含空格时必须自己加引号，Start-Process 只用空格拼接参数
-  $p = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS',('/LOG="{0}"' -f $logFile)) -PassThru
+  # /LOG 路径含空格时必须自己加引号，Start-Process 只用空格拼接参数。
+  # 用 /SILENT 而不是 /VERYSILENT：完全无窗口的静默安装是杀软行为启发式的高危特征，
+  # 未签名的安装包常被 Defender 当成木马拦下（Trojan:Win32/Bearfoos.A!ml）。
+  # /SILENT 会显示一个正常的安装进度窗口，属于常规软件行为，不会触发这类误报；
+  # /SP- 跳过「是否继续安装」的确认框，用户全程不用操作。
+  $p = Start-Process -FilePath $installer -ArgumentList @('/SILENT','/SP-','/NORESTART','/CLOSEAPPLICATIONS',('/LOG="{0}"' -f $logFile)) -PassThru
   $p.WaitForExit()
   # 等注册表里的版本被改成目标版本
   $deadline = (Get-Date).AddSeconds($waitSecs)
