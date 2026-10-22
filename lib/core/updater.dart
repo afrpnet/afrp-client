@@ -15,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.13';
+const String kAppVersion = '1.3.14';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -1011,6 +1011,10 @@ class UpdateResult {
             '已尝试强制结束并重试一次。\n'
             '请重启电脑后重试更新，或到下载页手动下载安装包安装。\n'
             '安装日志：${logPath.isEmpty ? '（无）' : logPath}';
+      case 'done':
+        return '更新未完成：安装程序已运行，但程序文件没有更新到目标版本。\n\n'
+            '请重启电脑后重试更新，或到下载页手动下载安装包安装。\n'
+            '安装日志：${logPath.isEmpty ? '（无）' : logPath}';
       case 'replace':
         return '更新未完成：程序文件替换失败（文件可能仍被占用）。\n'
             '请关闭所有 AFRP OIDC Client 进程后重试，或到下载页手动下载。';
@@ -1018,7 +1022,8 @@ class UpdateResult {
         return '更新未执行：程序仍在运行，文件被占用。\n'
             '请完全退出 AFRP OIDC Client 后重新发起更新。';
       default:
-        return '更新未完成，安装程序没有成功写入文件。\n'
+        return '更新未完成：安装程序没有成功写入文件。\n\n'
+            '请重启电脑后重试更新，或到下载页手动下载安装包安装。\n'
             '安装日志：${logPath.isEmpty ? '（无）' : logPath}';
     }
   }
@@ -1286,31 +1291,6 @@ function Stop-App {
   Start-Sleep -Seconds 2
 }
 
-function Install-Package {
-  if (Test-Path $logFile) { Remove-Item $logFile -Force -ErrorAction SilentlyContinue }
-  # /LOG 路径含空格时必须自己加引号，Start-Process 只用空格拼接参数
-  $p = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS',('/LOG="{0}"' -f $logFile)) -PassThru
-  $p.WaitForExit()
-  $ok = $false
-  $busy = $false
-  if (Test-Path $logFile) {
-    try {
-      $txt = [System.IO.File]::ReadAllText($logFile)
-      if ($txt -match 'Installation process succeeded') { $ok = $true }
-      elseif ($txt -match 'could not be shut down') { $busy = $true }
-    } catch { }
-  }
-  return @{ ok = $ok; busy = $busy }
-}
-
-Stop-App
-$r = Install-Package
-if (-not $r.ok -and $r.busy) {
-  # 仍有进程占用安装目录，强制结束后再试一次
-  Stop-App
-  $r = Install-Package
-}
-
 # 找安装目录：注册表 64 位视图优先，再退 32 位视图，最后用当前程序路径
 $instDir = ''
 foreach ($view in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
@@ -1322,8 +1302,59 @@ if (-not $instDir) { $instDir = Split-Path -Parent $fallback }
 $target = Join-Path $instDir $exeName
 if (-not (Test-Path $target)) { $target = $fallback }
 
-$code = if ($r.ok) { 'done' } else { 'installfailed' }
-Set-Content -Path $statusFile -Value ("ok=$($r.ok)`ncode=$code`nlog=$logFile`nversion=$version`ntarget=$target")
+# 读已安装版本：先看注册表的 DisplayVersion，缺失时退到 exe 的文件版本
+function Get-InstalledVersion {
+  foreach ($view in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
+    $p = Get-ItemProperty -Path (Join-Path $view ('{' + $appId + '}_is1')) -ErrorAction SilentlyContinue
+    if ($p -and $p.DisplayVersion) { return ([string]$p.DisplayVersion).Trim() }
+  }
+  try {
+    if (Test-Path $target) {
+      return [System.Diagnostics.FileVersionInfo]::GetVersionInfo($target).FileVersion
+    }
+  } catch { }
+  return ''
+}
+
+# 是否已装上目标版本：判断更新成败只看这个，不看安装日志。
+# 安装程序刚退出时日志可能还没落盘、或仍被安装程序占用而读不出来，
+# 拿日志判断会把「已装成功」误报成失败（用户会看到「更新未完成」但版本其实已升级）。
+function Test-VersionInstalled {
+  $inst = Get-InstalledVersion
+  if (-not $inst) { return $false }
+  $t = $version.Trim()
+  $plus = $t.IndexOf('+')
+  if ($plus -gt 0) { $t = $t.Substring(0, $plus) }
+  $t = $t.TrimStart('v').TrimStart('V')
+  if ($inst -eq $t) { return $true }
+  if ($inst -like ($t + '*')) { return $true }
+  return $false
+}
+
+function Install-Package($waitSecs) {
+  if (Test-Path $logFile) { Remove-Item $logFile -Force -ErrorAction SilentlyContinue }
+  # /LOG 路径含空格时必须自己加引号，Start-Process 只用空格拼接参数
+  $p = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS',('/LOG="{0}"' -f $logFile)) -PassThru
+  $p.WaitForExit()
+  # 等注册表里的版本被改成目标版本
+  $deadline = (Get-Date).AddSeconds($waitSecs)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-VersionInstalled) { return $true }
+    Start-Sleep -Milliseconds 500
+  }
+  return $false
+}
+
+Stop-App
+$ok = Install-Package 60
+if (-not $ok) {
+  # 版本没变：多半是有进程占用安装目录（或安装被中断），强制结束后再试一次
+  Stop-App
+  $ok = Install-Package 30
+}
+
+$code = if ($ok) { 'done' } else { 'installfailed' }
+Set-Content -Path $statusFile -Value ("ok=$ok`ncode=$code`nlog=$logFile`nversion=$version`ntarget=$target")
 ''';
 
 /// 免安装版更新脚本：等待旧进程退出 → 覆盖程序文件 → 重新拉起 App

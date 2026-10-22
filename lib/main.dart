@@ -75,6 +75,12 @@ class _FrpAppState extends State<FrpApp> {
     if (result == null || result.ok) {
       return;
     }
+    // 状态文件可能写于安装真正完成之前，或安装日志读早了导致误判；
+    // 只要当前版本已经不低于更新目标版本，就说明更新其实成功了，不必报错。
+    if (result.version.isNotEmpty &&
+        compareVersions(kAppVersion, result.version) >= 0) {
+      return;
+    }
     // 等首帧渲染完成，此时才有可用的 Navigator context
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final ctx = appNavigatorKey.currentContext;
