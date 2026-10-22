@@ -15,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.15';
+const String kAppVersion = '1.3.16';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -1302,7 +1302,10 @@ if (-not (Test-Path $installer)) {
     param($helper)
     try {
       # Start-Process 会用空格拼接参数，脚本路径含空格时必须自己加引号
-      $p = Start-Process -FilePath 'powershell.exe' -Verb RunAs -PassThru -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $helper + '"'))
+      # 提权后是新起的进程，会自带一个控制台窗口（UAC 点「是」后闪出黑窗）；
+      # 两层都隐藏：Start-Process 的 -WindowStyle 让进程创建时就不可见，
+      # 参数里的 -WindowStyle 再让 PowerShell 自己隐藏一次，兜住创建瞬间的闪烁
+      $p = Start-Process -FilePath 'powershell.exe' -Verb RunAs -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',('"' + $helper + '"'))
       return @{ ok = $true; id = $p.Id }
     } catch {
       return @{ ok = $false; id = 0 }
