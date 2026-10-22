@@ -97,6 +97,8 @@ out += 'auth.oidc.audience = "' + esc(audience) + '"\n';
 if (scope != '') {
 	out += 'auth.oidc.scope = "' + esc(scope) + '"\n';
 }
+// 上报客户端类型，网站后台可显示该账号在用哪种客户端连接
+out += 'auth.oidc.additionalEndpointParams.client_type = "openwrt"\n';
 
 let proxies = cfg.proxies;
 if (type(proxies) == 'array') {
