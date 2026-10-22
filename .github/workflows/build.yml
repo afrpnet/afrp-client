@@ -1083,6 +1083,25 @@ jobs:
           CI_API_URL: ${{ secrets.CI_API_URL }}
           SITE_URL: ${{ secrets.SITE_URL || 'https://www.afrp.net' }}
 
+      - name: 上传 manifest 副本到 R2
+        if: env.R2_ACCOUNT_ID != ''
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          # 设备端（OpenWrt 路由器）可能连不上源站，检测改从 R2 副本拿
+          export AWS_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID}"
+          export AWS_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY}"
+          export AWS_DEFAULT_REGION="auto"
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws s3 cp /tmp/manifest-updated.json "s3://${R2_BUCKET}/manifest.json" \
+            --endpoint-url "$ENDPOINT" --cache-control "no-cache, max-age=60" --content-type "application/json"
+          echo "✅ R2 清单副本已更新：https://dl.afrp.net/manifest.json"
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
       - name: 输出统计信息
         run: |
           echo ""

@@ -183,6 +183,9 @@ return view.extend({
 					(best.size ? '，' + sizeText(best.size) : '') +
 					(best.date ? '，' + best.date : '');
 				var notes = best.notes ? '\n' + best.notes : '';
+				var srcText = { website: _('网站清单'), r2: _('R2 清单'), github: _('GitHub Release') }[d.source] || '';
+				if (srcText)
+					notes += '\n' + _('检测来源') + '：' + srcText;
 
 				if (!d.current_version) {
 					coreInfo.textContent = head + _('。本机尚未安装 frpc 核心。');
@@ -198,7 +201,7 @@ return view.extend({
 				coreDetail.textContent = head + notes;
 
 				if (!best.sha256) {
-					coreDetail.textContent += '\n' + _('该条目缺少 SHA-256 校验值，无法在线安装，请到官网下载页手动安装。');
+					coreDetail.textContent += '\n' + _('该条目缺少 SHA-256 校验值，无法在线安装。请检查路由器能否访问 www.afrp.net、dl.afrp.net 与 github.com，或到官网下载页手动安装。');
 					return;
 				}
 				if (state.running)
@@ -220,9 +223,9 @@ return view.extend({
 			btn.disabled = true;
 			coreInfo.textContent = _('正在下载并校验…文件较大时可能需要数十秒，请勿关闭页面。');
 			
-			// 优先使用 R2 URL（如果有）
-			var installUrl = entry.r2_url || entry.url;
-			return fs.exec(UPDATE_CORE, [ 'install', installUrl, entry.sha256, entry.file ]).then(function(res) {
+			// 清单条目的 sha256 与其 url 一一对应，只能用条目自身的地址
+			var installUrl = entry.url;
+			return fs.exec(UPDATE_CORE, [ 'install', installUrl, entry.sha256 ]).then(function(res) {
 				var d = null;
 				try { d = JSON.parse((res.stdout || '').trim()); } catch (e) { d = null; }
 				if (d == null || d.ok != true)

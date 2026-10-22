@@ -142,20 +142,6 @@ function cmdStatus() {
 	});
 }
 
-// 按版本号排序（从高到低）
-function sortCandidates(list) {
-	for (let i = 1; i < length(list); i++) {
-		let key = list[i];
-		let j = i - 1;
-		while (j >= 0 && cmpVer(list[j].version, key.version) < 0) {
-			list[j + 1] = list[j];
-			j--;
-		}
-		list[j + 1] = key;
-	}
-	return list;
-}
-
 function cmpVer(a, b) {
 	function parts(v) {
 		return String(v || '').replace(/^[vV]/, '').split('.').map(function(s) {
@@ -172,6 +158,106 @@ function cmpVer(a, b) {
 			return x < y ? -1 : 1;
 	}
 	return 0;
+}
+
+// 按版本号排序（从高到低）
+function sortCandidates(list) {
+	for (let i = 1; i < length(list); i++) {
+		let key = list[i];
+		let j = i - 1;
+		while (j >= 0 && cmpVer(list[j].version, key.version) < 0) {
+			list[j + 1] = list[j];
+			j--;
+		}
+		list[j + 1] = key;
+	}
+	return list;
+}
+
+// 清单来源：网站 JSON → R2 副本 → GitHub Release
+// 网站清单取不到时（路由器解析不了 www.afrp.net 等情况）走 R2 副本，
+// R2 是 CDN，境内可达性比源站好；两边都拿不到才回落 GitHub。
+function manifestUrls(baseUrl) {
+	let urls = [];
+	urls[length(urls)] = baseUrl + '/download/manifest.json';
+	urls[length(urls)] = 'https://dl.afrp.net/manifest.json';
+	return urls;
+}
+
+function fetchJson(url) {
+	let raw = run("uclient-fetch -q -T 15 -O - '" + url + "' 2>/dev/null");
+	if (!raw) {
+		return null;
+	}
+	try {
+		return json(raw);
+	} catch (e) {
+		return null;
+	}
+}
+
+// 上游 Release 附带的校验文件，GitHub 兜底时用它补出 sha256
+function upstreamSha256(ver, fname) {
+	let bases = [
+		'https://github.com/fatedier/frp/releases/download/v',
+		'https://ghfast.top/https://github.com/fatedier/frp/releases/download/v',
+		'https://gh-proxy.com/https://github.com/fatedier/frp/releases/download/v',
+		'https://ghproxy.net/https://github.com/fatedier/frp/releases/download/v'
+	];
+	// 校验文件格式：<sha256>  <文件名>，文件名后跟空白或行尾
+	let pat = regexp('([0-9a-fA-F]{64})[[:space:]]+' + fname + '([[:space:]]|$)');
+	for (let i = 0; i < length(bases); i++) {
+		let raw = run("uclient-fetch -q -T 20 -O - '" + bases[i] + ver + "/frp_sha256_checksums.txt' 2>/dev/null");
+		if (!raw) {
+			continue;
+		}
+		let m = match(raw, pat);
+		if (m != null && m[1] != null) {
+			return m[1];
+		}
+	}
+	return '';
+}
+
+// 把 GitHub 直链及其代理镜像追加到候选源里
+// 代理地址形如 https://ghfast.top/https://github.com/xxx，
+// 整条原都要带上，只换前缀会把路径丢掉
+function appendGitHubSources(sources, url, sha) {
+	sources[length(sources)] = { url: url, sha: sha };
+	sources[length(sources)] = { url: replace(url, 'https://github.com/', 'https://ghfast.top/https://github.com/'), sha: sha };
+	sources[length(sources)] = { url: replace(url, 'https://github.com/', 'https://gh-proxy.com/https://github.com/'), sha: sha };
+	sources[length(sources)] = { url: replace(url, 'https://github.com/', 'https://ghproxy.net/https://github.com/'), sha: sha };
+}
+
+// 从清单里挑出适用于当前架构的 frpc 条目
+function pickFromManifest(manifest, detArch) {
+	let out = [];
+	if (!manifest || !manifest.items || length(manifest.items) == 0) {
+		return out;
+	}
+	for (let i = 0; i < length(manifest.items); i++) {
+		let item = manifest.items[i];
+		if (item.kind != 'frpc') continue;
+		if (item.platform != 'linux' && item.platform != 'openwrt') continue;
+		if (item.arch && item.arch != 'all' && item.arch != detArch) continue;
+		if (!item.latest) continue;
+		if (!item.url || item.url == '') continue;
+
+		// 清单里的 sha256 永远对应 item.url 本身，不能另找地址替换，
+		// 否则校验值会对不上。备用源由 cmdInstall 按需自行派生。
+		out[length(out)] = {
+			id: item.id || ('frpc-' + item.platform + '-' + item.arch),
+			version: item.version,
+			url: item.url,
+			sha256: item.sha256 || '',
+			file: item.file,
+			size: item.size || 0,
+			date: item.date || '',
+			notes: item.notes || '',
+			arch: item.arch || detArch
+		};
+	}
+	return out;
 }
 
 function cmdCheck(base, arch) {
@@ -193,73 +279,41 @@ function cmdCheck(base, arch) {
 	}
 	baseUrl = replace(baseUrl, /\/+$/, '');
 
-	// 尝试从网站 manifest.json 获取
 	let candidates = [];
 	let source = '';
-	
-	try {
-		let manifestUrl = baseUrl + '/download/manifest.json';
-		let manifestRaw = run("uclient-fetch -q -T 15 -O - '" + manifestUrl + "' 2>/dev/null");
-		
-		if (manifestRaw) {
-			let manifest = null;
-			try {
-				manifest = json(manifestRaw);
-			} catch (e) {
-				manifest = null;
-			}
-			
-			if (manifest && manifest.items && length(manifest.items) > 0) {
-				// 筛选 frpc + linux/openwrt + 当前架构的最新条目
-				for (let i = 0; i < length(manifest.items); i++) {
-					let item = manifest.items[i];
-					if (item.kind != 'frpc') continue;
-					if (item.platform != 'linux' && item.platform != 'openwrt') continue;
-					if (item.arch && item.arch != 'all' && item.arch != detArch) continue;
-					if (!item.latest) continue;
-					if (!item.url || item.url == '') continue;
-					
-					candidates[length(candidates)] = {
-						id: item.id || ('frpc-' + item.platform + '-' + item.arch),
-						version: item.version,
-						url: item.url,
-						r2_url: (item.mirrors && length(item.mirrors) > 0) ? findR2Url(item.mirrors) : '',
-						sha256: item.sha256 || '',
-						file: item.file,
-						size: item.size || 0,
-						date: item.date || '',
-						notes: item.notes || '',
-						arch: item.arch || detArch
-					};
-				}
-				
-				if (length(candidates) > 0) {
-					source = 'website';
-				}
-			}
-		}
-	} catch (e) {
-		// 网站获取失败，继续尝试 GitHub
+
+	// 1) 网站清单
+	let urls = manifestUrls(baseUrl);
+	candidates = pickFromManifest(fetchJson(urls[0]), detArch);
+	if (length(candidates) > 0) {
+		source = 'website';
 	}
-	
-	// 如果网站失败，回退到 GitHub Atom feed
-	if (source != 'website') {
+
+	// 2) R2 清单副本
+	if (length(candidates) == 0) {
+		candidates = pickFromManifest(fetchJson(urls[1]), detArch);
+		if (length(candidates) > 0) {
+			source = 'r2';
+		}
+	}
+
+	// 3) 回退到 GitHub Atom feed（此时没有清单里的 sha256，从上游校验文件补）
+	if (length(candidates) == 0) {
 		try {
 			let feed = run("uclient-fetch -q -T 15 -O - 'https://github.com/fatedier/frp/releases.atom' 2>/dev/null");
 			let vm = match(feed, regexp('<title>[[:space:]]*v([0-9]+[.][0-9]+[.][0-9]+)[[:space:]]*</title>'));
-			
+
 			if (vm) {
 				let ver = vm[1];
-				let r2Url = 'https://dl.afrp.net/frpc/frp_' + ver + '_linux_' + detArch + '.tar.gz';
-				let ghUrl = 'https://github.com/fatedier/frp/releases/download/v' + ver + '/frp_' + ver + '_linux_' + detArch + '.tar.gz';
-				
+				let ghFile = 'frp_' + ver + '_linux_' + detArch + '.tar.gz';
+				let ghUrl = 'https://github.com/fatedier/frp/releases/download/v' + ver + '/' + ghFile;
+
 				candidates = [{
 					id: 'gh-frpc-linux-' + detArch,
 					version: ver,
 					url: ghUrl,
-					r2_url: r2Url,
-					sha256: '',
-					file: 'frp_' + ver + '_linux_' + detArch + '.tar.gz',
+					sha256: upstreamSha256(ver, ghFile),
+					file: ghFile,
 					size: 0,
 					date: '',
 					notes: 'GitHub Release（备用源）',
@@ -271,9 +325,9 @@ function cmdCheck(base, arch) {
 			// GitHub 也失败
 		}
 	}
-	
+
 	if (length(candidates) == 0) {
-		fail('无法获取最新版本（网站和 GitHub 均不可达），请检查网络');
+		fail('无法获取最新版本（网站、R2 与 GitHub 均不可达），请检查网络');
 	}
 	
 	// 按版本号排序，取最新的
@@ -292,30 +346,26 @@ function cmdCheck(base, arch) {
 	});
 }
 
-// 从 mirrors 数组中查找 R2 URL
-function findR2Url(mirrors) {
-	for (let i = 0; i < length(mirrors); i++) {
-		let m = mirrors[i];
-		if (m.name == '站内镜像' && m.url) {
-			return m.url;
-		}
-	}
-	return '';
-}
+function cmdInstall(url, sha256) {
 
-function cmdInstall(url, sha256, fname) {
 	url = trim(str(url));
 	sha256 = str(sha256);
-	fname = trim(str(fname));
 
 	if (match(url, regexp('^https?://')) == null) {
 		fail('下载地址无效');
 	}
+	// 清单没带校验值时，从上游 Release 的校验文件补齐（GitHub 兜底场景）
+	if (sha256 == '' && found(url, 'github.com/')) {
+		let vm = match(url, regexp('/v([0-9]+[.][0-9]+[.][0-9]+)/([^/]+)$'));
+		if (vm != null) {
+			sha256 = upstreamSha256(vm[1], vm[2]);
+		}
+	}
+	if (sha256 == '') {
+		fail('缺少 SHA-256 校验值，无法校验安装包，已拒绝安装');
+	}
 	if (sha256 != '' && match(sha256, regexp('^[0-9a-fA-F]{64}$')) == null) {
 		fail('SHA-256 校验值无效，已拒绝安装');
-	}
-	if (fname != '' && match(fname, regexp('^[A-Za-z0-9][A-Za-z0-9._-]*$')) == null) {
-		fail('文件名无效');
 	}
 
 	okCmd('rm -rf /tmp/afrp');
@@ -325,74 +375,69 @@ function cmdInstall(url, sha256, fname) {
 
 	let dl = '/tmp/afrp/download.bin';
 
-	// 尝试多个源：R2（站内镜像）→ GitHub 直连 → 代理镜像
+	// 候选源，每个源带各自的期望校验值。
+	// R2 上的 frpc 是从上游整包里解出的裸二进制，和 GitHub 整包的 sha256 不同，
+	// 所以两类源必须各自用自己的校验值。
 	let sources = [];
 	if (found(url, 'github.com')) {
-		// 从 GitHub URL 提取文件名，构造 R2 URL
-		let fm = match(url, regexp('/([^/]+[.]tar[.]gz)$'));
-		if (fm != null) {
-			sources[length(sources)] = 'https://dl.afrp.net/frpc/' + fm[1];
-		}
-		sources[length(sources)] = url;
-		sources[length(sources)] = replace(url, 'https://github.com/', 'https://ghfast.top/');
-		sources[length(sources)] = replace(url, 'https://github.com/', 'https://gh-proxy.com/');
-		sources[length(sources)] = replace(url, 'https://github.com/', 'https://ghproxy.net/');
+		// GitHub 整包：校验值就是上游 frp_sha256_checksums.txt 里的值
+		appendGitHubSources(sources, url, sha256);
 	} else if (found(url, 'dl.afrp.net')) {
-		// R2 URL 作为首选
-		sources[length(sources)] = url;
-		// 添加 GitHub 备选（如果能从文件名推断）
-		let fm = match(url, regexp('/frpc/([^/]+)$'));
+		sources[length(sources)] = { url: url, sha: sha256 };
+		// R2 走不通时回退上游整包，校验值另取上游校验文件
+		let fm = match(url, regexp('/frpc/frpc_([0-9]+[.][0-9]+[.][0-9]+)_([a-z0-9]+)_([a-z0-9]+)$'));
 		if (fm != null) {
-			let fname = fm[1];
-			let vm = match(fname, regexp('frp_([0-9.]+)_linux_'));
-			if (vm != null) {
-				let ver = vm[1];
-				let am = match(fname, regexp('_linux_(.+)[.]tar[.]gz$'));
-				if (am != null) {
-					sources[length(sources)] = 'https://github.com/fatedier/frp/releases/download/v' + ver + '/' + fname;
-				}
+			let ver = fm[1];
+			let upName = 'frp_' + ver + '_' + fm[2] + '_' + fm[3] + '.tar.gz';
+			let upSha = upstreamSha256(ver, upName);
+			if (upSha != '') {
+				appendGitHubSources(sources, 'https://github.com/fatedier/frp/releases/download/v' + ver + '/' + upName, upSha);
 			}
 		}
 	} else {
-		sources[length(sources)] = url;
+		sources[length(sources)] = { url: url, sha: sha256 };
+	}
+
+	if (sha256 != '' && !okCmd('command -v sha256sum >/dev/null')) {
+		fail('无法计算文件校验值（系统缺少 sha256sum）');
 	}
 
 	let downloaded = false;
+	let badChecksum = false;
 	for (let i = 0; i < length(sources); i++) {
-		let qs = shq(sources[i]);
+		let src = sources[i];
+		let qs = shq(src.url);
 		if (qs == null) {
 			continue;
 		}
 		if (okCmd('uclient-fetch -q -T 60 -O ' + shq(dl) + ' ' + qs + ' 2>/dev/null') && okCmd('test -s ' + shq(dl))) {
+			// 单个源校验不过就换下一个源，别直接判失败（R2 上的旧文件、代理返回的页面都属这种情况）
+			let out = run('sha256sum ' + shq(dl) + ' 2>/dev/null');
+			let m = match(out, regexp('^[0-9a-fA-F]{64}'));
+			if (m == null) {
+				okCmd('rm -f ' + shq(dl));
+				continue;
+			}
+			if (match(m[0], regexp('^' + src.sha + '$', 'i')) == null) {
+				badChecksum = true;
+				okCmd('rm -f ' + shq(dl));
+				continue;
+			}
 			downloaded = true;
 			break;
 		}
 		okCmd('rm -f ' + shq(dl));
 	}
 	if (!downloaded) {
+		if (badChecksum) {
+			fail('SHA-256 校验失败，所有下载源的安装包都不匹配');
+		}
 		fail('下载 frpc 失败（R2、GitHub 及所有代理均不可达），请检查路由器网络');
 	}
 
-	// SHA-256 校验（如果提供了校验值）
-	if (sha256 != '') {
-		let out = run('sha256sum ' + shq(dl) + ' 2>/dev/null');
-		let m = match(out, regexp('^[0-9a-fA-F]{64}'));
-		if (m == null) {
-			fail('无法计算文件校验值（系统缺少 sha256sum）');
-		}
-		if (match(m[0], regexp('^' + sha256 + '$', 'i')) == null) {
-			fail('SHA-256 校验失败，文件不完整或已被篡改');
-		}
-	}
-
-	let src = dl;
-	if (fname != '' && match(fname, regexp('[.](tar[.]gz|tgz)$', 'i')) != null) {
-		if (!okCmd('mkdir -p /tmp/afrp/x')) {
-			fail('无法创建解压目录');
-		}
-		if (!okCmd('tar -xzf ' + shq(dl) + ' -C /tmp/afrp/x')) {
-			fail('解压 frpc 压缩包失败');
-		}
+	// 下载的可能是裸二进制（R2），也可能是上游整包（GitHub），按内容判断
+	let bin = dl;
+	if (okCmd('mkdir -p /tmp/afrp/x') && okCmd('tar -xzf ' + shq(dl) + ' -C /tmp/afrp/x 2>/dev/null')) {
 		// 清理非 frpc 文件，只保留二进制
 		let hit = trim(run('find /tmp/afrp/x -type f -name frpc 2>/dev/null | head -n1'));
 		if (hit == '') {
@@ -401,10 +446,10 @@ function cmdInstall(url, sha256, fname) {
 		if (hit == '') {
 			fail('压缩包中未找到 frpc 可执行文件');
 		}
-		src = hit;
+		bin = hit;
 	}
 
-	let qs = shq(src);
+	let qs = shq(bin);
 	if (qs == null) {
 		fail('内部错误：路径包含非法字符');
 	}
@@ -456,7 +501,7 @@ if (cmd == 'status') {
 } else if (cmd == 'check') {
 	cmdCheck(args[0], args[1]);
 } else if (cmd == 'install') {
-	cmdInstall(args[0], args[1], args[2]);
+	cmdInstall(args[0], args[1]);
 } else {
 	fail('未知操作：' + cmd);
 }
