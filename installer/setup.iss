@@ -2,7 +2,7 @@
 ; Build with: build.bat (stages files first, then calls ISCC on this script)
 
 #define MyAppname "AFRP OIDC Client"
-#define MyAppVersion "1.3.11"
+#define MyAppVersion "1.3.12"
 ; 架构由 CI 通过 /DMyAppArch=arm64 传入；不传则默认 amd64（现有 amd64 job 行为不变）
 #ifndef MyAppArch
   #define MyAppArch "amd64"
@@ -45,7 +45,7 @@ WizardStyle=modern
 MinVersion=10.0.17763
 SetupLogging=yes
 InfoBeforeFile=install-notes.txt
-VersionInfoVersion=1.3.11.0
+VersionInfoVersion=1.3.12.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductname={#MyAppname}
 VersionInfoDescription=AFRP OIDC Client Setup

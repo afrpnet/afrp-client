@@ -14,7 +14,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.11';
+const String kAppVersion = '1.3.12';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -908,6 +908,8 @@ Future<void> performAppUpdate(
   String baseUrl,
   UpdateEntry entry, {
   void Function(int received, int total)? onProgress,
+  void Function(String message)? onStatus,
+  Future<bool> Function(String message)? confirm,
 }) async {
   final platform = currentUpdatePlatform();
 
@@ -917,13 +919,30 @@ Future<void> performAppUpdate(
         entry.channel == 'installer' ||
         RegExp('setup|install', caseSensitive: false).hasMatch(entry.file);
     if (await isWindowsInstalled() && isSetup) {
-      await _runInstallerAndRestart(file, Platform.resolvedExecutable);
+      // 安装到 Program Files 必须提权，系统会弹「用户账户控制」窗口；
+      // 先让用户确认一次，避免 App 退出后没人知道要授权什么。
+      if (confirm != null) {
+        final go = await confirm(
+          '系统将弹出「用户账户控制」窗口，需要点击「是」才能把新版本写入 Program Files。\n'
+          '点击「开始安装」后 AFRP OIDC Client 会自动退出，安装完成会自动重新打开。',
+        );
+        if (!go) {
+          throw UpdateException('已取消本次更新');
+        }
+      }
+      onStatus?.call('即将启动安装程序，请在系统弹出的管理员授权窗口点击「是」');
+      await _runInstallerAndRestart(
+        file,
+        Platform.resolvedExecutable,
+        entry.version,
+      );
     } else {
       final binary = await extractExecutable(
         file,
         preferredName: 'afrp_oidc.exe',
       );
-      await _replacePortableAndRestart(binary);
+      onStatus?.call('正在替换程序文件，App 稍后会自动重新打开');
+      await _replacePortableAndRestart(binary, entry.version);
     }
     // 等待更新脚本启动后再退出，避免脚本还没运行程序就退出了
     await Future.delayed(const Duration(seconds: 2));
@@ -942,96 +961,328 @@ Future<void> performAppUpdate(
   }
 }
 
-/// Windows 安装版：临时 bat 等本进程退出 → 静默安装 → 从注册表读取安装路径并重启
-/// Inno Setup [Run] 段有 skipifsilent，静默安装不会自动启动，故由 bat 负责重启。
-Future<void> _runInstallerAndRestart(File installer, String exePath) async {
+/// 上次更新的结果（由更新脚本写入，App 启动时读取）
+class UpdateResult {
+  final bool ok;
+  final String code;
+  final String logPath;
+  final String version;
+
+  const UpdateResult({
+    required this.ok,
+    required this.code,
+    required this.logPath,
+    required this.version,
+  });
+
+  /// 面向用户的原因说明
+  String get message {
+    switch (code) {
+      case 'denied':
+        return '更新未执行：没有获得管理员授权。\n\n'
+            'Windows 会在安装时弹出「用户账户控制」窗口，需要点击「是」才能写入 Program Files。\n'
+            '你可以重新发起更新，或到下载页手动下载安装包安装。';
+      case 'uactimeout':
+        return '更新未执行：等待管理员授权超时。\n\n'
+            'Windows 弹出「用户账户控制」窗口后 5 分钟内没有确认，本次更新已取消。\n'
+            '请重新发起更新，并在弹窗出现时点击「是」。';
+      case 'timeout':
+        return '更新超时：10 分钟内没有完成安装。\n\n'
+            '通常是管理员授权窗口一直没有被确认。\n'
+            '你可以重新发起更新，或到下载页手动下载安装包安装。';
+      case 'noinstaller':
+        return '更新未执行：安装包未能启动。\n'
+            '请到下载页手动下载安装包安装。';
+      case 'replace':
+        return '更新未完成：程序文件替换失败（文件可能仍被占用）。\n'
+            '请关闭所有 AFRP OIDC Client 进程后重试，或到下载页手动下载。';
+      case 'appbusy':
+        return '更新未执行：程序仍在运行，文件被占用。\n'
+            '请完全退出 AFRP OIDC Client 后重新发起更新。';
+      default:
+        return '更新未完成，安装程序没有成功写入文件。\n'
+            '安装日志：${logPath.isEmpty ? '（无）' : logPath}';
+    }
+  }
+}
+
+/// 更新结果文件所在路径（App 数据目录，避免装到 Program Files 里没有写权限）
+Future<File> _updateStatusFile() async {
+  final base = await getApplicationSupportDirectory();
+  final dir = Directory('${base.path}${Platform.pathSeparator}updates');
+  if (!dir.existsSync()) {
+    dir.createSync(recursive: true);
+  }
+  return File('${dir.path}${Platform.pathSeparator}status.txt');
+}
+
+/// 读取上次更新的结果；读后即删除，避免重复提示
+Future<UpdateResult?> readUpdateResult() async {
+  try {
+    final f = await _updateStatusFile();
+    if (!f.existsSync()) {
+      return null;
+    }
+    final content = await f.readAsString();
+    f.deleteSync();
+    final kv = <String, String>{};
+    for (final line in const LineSplitter().convert(content)) {
+      final i = line.indexOf('=');
+      if (i > 0) {
+        kv[line.substring(0, i).trim()] = line.substring(i + 1).trim();
+      }
+    }
+    if (kv.isEmpty) {
+      return null;
+    }
+    return UpdateResult(
+      ok: kv['ok'] == 'true',
+      code: kv['code'] ?? '',
+      logPath: kv['log'] ?? '',
+      version: kv['version'] ?? '',
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+/// PowerShell 单引号字符串转义
+String _psQuote(String s) => s.replaceAll("'", "''");
+
+/// 写 .ps1 脚本文件。
+/// 必须带 UTF-8 BOM：Windows PowerShell 5.1 读取无 BOM 的脚本时按系统 ANSI 代码页解码，
+/// 脚本里的中文注释会变成乱码并把后续代码解析坏（曾导致 $ok 等变量静默变空）。
+Future<void> _writePsScript(File file, String content) async {
+  await file.writeAsString('\uFEFF$content', flush: true);
+}
+/// Windows 安装版：脚本等本进程退出 → 以管理员身份静默安装 → 从注册表读取安装路径并重启。
+/// 安装到 Program Files 必须提权，Windows 会弹 UAC 授权窗，用户点「是」才会真正安装；
+/// 脚本带 10 分钟超时并把失败原因写盘，保证 App 一定会被重新拉起，不会停在「已退出」状态。
+Future<void> _runInstallerAndRestart(
+  File installer,
+  String exePath,
+  String version,
+) async {
   final tmpDir = await getTemporaryDirectory();
-  final bat = File(
-    '${tmpDir.path}${Platform.pathSeparator}afrp_update_${DateTime.now().millisecondsSinceEpoch}.bat',
+  final stamp = DateTime.now().millisecondsSinceEpoch;
+  final script = File(
+    '${tmpDir.path}${Platform.pathSeparator}afrp_update_$stamp.ps1',
   );
-  final currentPid = pid;
+  final logFile = File(
+    '${tmpDir.path}${Platform.pathSeparator}afrp_setup_$stamp.log',
+  );
+  final status = await _updateStatusFile();
   // AppId 与 installer/setup.iss 中的 AppId 一致
   const appId = 'A6C5E7B2-3F41-4D8E-9B07-5C2A8F16D9E3';
-  await bat.writeAsString('''
-@echo off
-set /a WAITED=0
-:waitloop
-tasklist /fi "PID eq $currentPid" /fo CSV /nh 2>nul | findstr "$currentPid" >nul
-if errorlevel 1 goto proceed
-rem 最多等 30 秒；旧进程仍不退出则强杀，避免等待循环无限挂起
-if %WAITED% GEQ 30 (
-  taskkill /pid $currentPid /f >nul 2>&1
-  timeout /t 1 /nobreak >nul
-  goto proceed
-)
-timeout /t 1 /nobreak >nul
-set /a WAITED+=1
-goto waitloop
-:proceed
-start /wait "" "${installer.path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS
-timeout /t 2 /nobreak >nul
-rem 从注册表读取 Inno Setup 安装路径
-for /f "tokens=2*" %%A in ('reg query "HKLM\\\\Software\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\Uninstall\\\\{$appId}_is1" /v InstallLocation 2^>nul') do set "INSTDIR=%%B"
-if defined INSTDIR (
-  if exist "%INSTDIR%\\afrp_oidc.exe" start "" "%INSTDIR%\\afrp_oidc.exe"
-) else (
-  rem 注册表未找到，回退到当前 exe 路径（便携版场景）
-  start "" "$exePath"
-)
-del "%~f0.vbs" 2>nul
-del "%~f0"
-''', flush: true);
-  await _startHiddenBat(bat);
+  final startedMarker = File('${script.path}.started');
+
+  final ps = _psInstallerUpdate
+      .replaceAll('__INSTALLER__', _psQuote(installer.path))
+      .replaceAll('__LOG__', _psQuote(logFile.path))
+      .replaceAll('__STATUS__', _psQuote(status.path))
+      .replaceAll('__STARTED__', _psQuote(startedMarker.path))
+      .replaceAll('__APPID__', appId)
+      .replaceAll('__EXENAME__', 'afrp_oidc.exe')
+      .replaceAll('__FALLBACK__', _psQuote(exePath))
+      .replaceAll('__PID__', pid.toString())
+      .replaceAll('__VERSION__', _psQuote(version));
+  await _writePsScript(script, ps);
+  if (!await _startHiddenScript(script, startedMarker)) {
+    throw UpdateException('更新脚本未能启动，请重试或到下载页手动下载安装包');
+  }
 }
 
-/// Windows 免安装版：临时 bat 等本进程退出后覆盖文件并重启
-Future<void> _replacePortableAndRestart(File newBinary) async {
+/// Windows 免安装版：脚本等本进程退出后覆盖文件并重启
+Future<void> _replacePortableAndRestart(
+  File newBinary,
+  String version,
+) async {
   final current = File(Platform.resolvedExecutable);
   final tmpDir = await getTemporaryDirectory();
-  final bat = File(
-    '${tmpDir.path}${Platform.pathSeparator}afrp_update_${DateTime.now().millisecondsSinceEpoch}.bat',
+  final stamp = DateTime.now().millisecondsSinceEpoch;
+  final script = File(
+    '${tmpDir.path}${Platform.pathSeparator}afrp_update_$stamp.ps1',
   );
-  final currentPid = pid;
-  await bat.writeAsString('''
-@echo off
-set /a WAITED=0
-:waitloop
-tasklist /fi "PID eq $currentPid" /fo CSV /nh 2>nul | findstr "$currentPid" >nul
-if errorlevel 1 goto proceed
-rem 最多等 30 秒；旧进程仍不退出则强杀，避免等待循环无限挂起
-if %WAITED% GEQ 30 (
-  taskkill /pid $currentPid /f >nul 2>&1
-  timeout /t 1 /nobreak >nul
-  goto proceed
-)
-timeout /t 1 /nobreak >nul
-set /a WAITED+=1
-goto waitloop
-:proceed
-copy /y "${newBinary.path}" "${current.path}" >nul
-start "" "${current.path}"
-del "%~f0.vbs" 2>nul
-del "%~f0"
-''', flush: true);
-  await _startHiddenBat(bat);
-  exit(0);
+  final status = await _updateStatusFile();
+  final startedMarker = File('${script.path}.started');
+
+  final ps = _psPortableUpdate
+      .replaceAll('__NEWBIN__', _psQuote(newBinary.path))
+      .replaceAll('__TARGET__', _psQuote(current.path))
+      .replaceAll('__STATUS__', _psQuote(status.path))
+      .replaceAll('__STARTED__', _psQuote(startedMarker.path))
+      .replaceAll('__PID__', pid.toString())
+      .replaceAll('__VERSION__', _psQuote(version));
+  await _writePsScript(script, ps);
+  if (!await _startHiddenScript(script, startedMarker)) {
+    throw UpdateException('更新脚本未能启动，请重试或到下载页手动下载');
+  }
 }
 
-/// 完全隐藏地启动更新 bat。
-/// 直接用 cmd /c start /min 仍会在任务栏留下一个最小化控制台窗口（用户看到"关不掉的 CMD"）。
-/// 这里改用 wscript.exe（GUI 子系统，无控制台）执行一段 VBS，由 VBS 以窗口样式 0（隐藏）
-/// 运行 bat，全过程不弹任何窗口、不占任务栏。
-Future<void> _startHiddenBat(File bat) async {
-  final vbs = File('${bat.path}.vbs');
-  // VBS 字符串里双引号需成对转义；bat 路径含空格也已由内层引号包住。
+/// 完全隐藏地启动更新脚本，并确认它确实开始执行。
+/// Dart 的 detached 方式直接跑 powershell.exe 会因无控制台而失败，
+/// 故仍用 wscript.exe（GUI 子系统，无控制台）执行一段 VBS，由 VBS 以窗口样式 0（隐藏）
+/// 运行 PowerShell，全程不弹窗口、不占任务栏。
+/// 脚本启动后会立刻写 started 标记；等不到标记说明脚本没跑起来，
+/// 此时不能让 App 直接退出，否则用户只会看到「程序没了，什么也没发生」。
+Future<bool> _startHiddenScript(File script, File startedMarker) async {
+  final vbs = File('${script.path}.vbs');
+  // VBS 字符串里双引号需成对转义；脚本路径含空格也已由内层引号包住。
+  // WSH 按系统 ANSI 代码页读取 .vbs，故用 systemEncoding 写，避免用户目录含中文时路径乱码。
   await vbs.writeAsString(
-    'CreateObject("WScript.Shell").Run "cmd /c ""${bat.path}""", 0, False\r\n',
+    'CreateObject("WScript.Shell").Run "powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""${script.path}""", 0, False\r\n',
     flush: true,
+    encoding: systemEncoding,
   );
   await Process.start('wscript.exe', [
     vbs.path,
   ], mode: ProcessStartMode.detached);
+
+  for (var i = 0; i < 100; i++) {
+    if (startedMarker.existsSync()) {
+      return true;
+    }
+    await Future.delayed(const Duration(milliseconds: 100));
+  }
+  return false;
 }
+
+/// 安装版更新脚本：等待旧进程退出 → 提权静默安装 → 校验结果 → 重新拉起 App
+const String _psInstallerUpdate = r'''
+$ErrorActionPreference = 'SilentlyContinue'
+$installer = '__INSTALLER__'
+$logFile = '__LOG__'
+$statusFile = '__STATUS__'
+$startedFile = '__STARTED__'
+$appId = '__APPID__'
+$exeName = '__EXENAME__'
+$fallback = '__FALLBACK__'
+$version = '__VERSION__'
+$appPid = __PID__
+
+# 0) 打标记：让 App 知道脚本确实开始执行了
+try { Set-Content -Path $startedFile -Value 'started' -ErrorAction Stop } catch { }
+
+# 1) 等旧进程退出（最多 30 秒）；App 还在跑就不要动它的文件
+$deadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $deadline) {
+  if (-not (Get-Process -Id $appPid -ErrorAction SilentlyContinue)) { break }
+  Start-Sleep -Milliseconds 500
+}
+if (Get-Process -Id $appPid -ErrorAction SilentlyContinue) {
+  Set-Content -Path $statusFile -Value ("ok=False`ncode=appbusy`nlog=`nversion=$version")
+  exit 0
+}
+
+# 2) 以管理员身份运行安装程序：Windows 会弹 UAC 授权窗，需用户点「是」
+#    Start-Process -Verb RunAs 会一直阻塞到用户做出选择，所以放进后台 Job，
+#    主脚本才能对「用户一直不点授权」设超时兜底（否则 App 退出后就再也没人拉起）。
+$code = 'noinstaller'
+$procId = 0
+if (-not (Test-Path $installer)) {
+  $code = 'noinstaller'
+} else {
+  # 清掉可能残留的旧日志，避免把上一次的安装结果当成本次结果
+  if (Test-Path $logFile) { Remove-Item $logFile -Force -ErrorAction SilentlyContinue }
+  $job = Start-Job -ScriptBlock {
+    param($exe, $log)
+    try {
+      $p = Start-Process -FilePath $exe -Verb RunAs -PassThru -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS',"/LOG=$log")
+      return @{ ok = $true; id = $p.Id }
+    } catch {
+      return @{ ok = $false; id = 0 }
+    }
+  } -ArgumentList $installer, $logFile
+
+  # 等用户在 UAC 窗口点「是」/「否」，最多 5 分钟
+  if (Wait-Job $job -Timeout 300) {
+    $r = Receive-Job $job -ErrorAction SilentlyContinue
+    Remove-Job $job -Force -ErrorAction SilentlyContinue
+    if ($r -and $r.ok) {
+      $code = 'running'
+      $procId = $r.id
+    } else {
+      $code = 'denied'
+    }
+  } else {
+    # 用户一直没确认授权：放弃本次安装，但 App 仍会被重新拉起
+    Stop-Job $job -ErrorAction SilentlyContinue
+    Remove-Job $job -Force -ErrorAction SilentlyContinue
+    $code = 'uactimeout'
+  }
+}
+
+if ($code -eq 'running') {
+  # 等安装结束（最多 10 分钟）
+  $deadline = (Get-Date).AddSeconds(600)
+  while ((Get-Date) -lt $deadline) {
+    if (-not (Get-Process -Id $procId -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 500
+  }
+  if (Get-Process -Id $procId -ErrorAction SilentlyContinue) {
+    $code = 'timeout'
+  } else {
+    $code = 'done'
+  }
+}
+
+# 3) 以 Inno 日志判断是否真的装成功
+$ok = $false
+if (Test-Path $logFile) {
+  try {
+    $txt = [System.IO.File]::ReadAllText($logFile)
+    if ($txt -match 'Installation process succeeded') { $ok = $true }
+  } catch { }
+}
+
+# 4) 找安装目录：注册表 64 位视图优先，再退 32 位视图，最后用当前程序路径
+$instDir = ''
+foreach ($view in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
+  if ($instDir) { break }
+  $p = Get-ItemProperty -Path (Join-Path $view ('{' + $appId + '}_is1')) -ErrorAction SilentlyContinue
+  if ($p -and $p.InstallLocation) { $instDir = $p.InstallLocation }
+}
+if (-not $instDir) { $instDir = Split-Path -Parent $fallback }
+$target = Join-Path $instDir $exeName
+if (-not (Test-Path $target)) { $target = $fallback }
+
+Set-Content -Path $statusFile -Value ("ok=$ok`ncode=$code`nlog=$logFile`nversion=$version")
+
+# 5) 重新拉起 App
+if (Test-Path $target) { Start-Process $target }
+''';
+
+/// 免安装版更新脚本：等待旧进程退出 → 覆盖程序文件 → 重新拉起 App
+const String _psPortableUpdate = r'''
+$ErrorActionPreference = 'SilentlyContinue'
+$newBin = '__NEWBIN__'
+$target = '__TARGET__'
+$statusFile = '__STATUS__'
+$startedFile = '__STARTED__'
+$version = '__VERSION__'
+$appPid = __PID__
+
+try { Set-Content -Path $startedFile -Value 'started' -ErrorAction Stop } catch { }
+
+$deadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $deadline) {
+  if (-not (Get-Process -Id $appPid -ErrorAction SilentlyContinue)) { break }
+  Start-Sleep -Milliseconds 500
+}
+if (Get-Process -Id $appPid -ErrorAction SilentlyContinue) {
+  Set-Content -Path $statusFile -Value ("ok=False`ncode=appbusy`nlog=`nversion=$version")
+  exit 0
+}
+
+$ok = $false
+try {
+  Copy-Item -Path $newBin -Destination $target -Force -ErrorAction Stop
+  $ok = $true
+} catch { }
+
+Set-Content -Path $statusFile -Value ("ok=$ok`ncode=replace`nlog=`nversion=$version")
+if (Test-Path $target) { Start-Process $target }
+''';
 
 Future<void> _installApk(String path) async {
   try {

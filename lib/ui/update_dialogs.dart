@@ -26,7 +26,7 @@ String _appUpdateHint(UpdateEntry e) {
   final platform = currentUpdatePlatform();
   if (platform == 'windows') {
     return e.channel == 'installer'
-        ? '将下载安装包并静默安装，App 会自动退出，完成后请重新打开。'
+        ? '将下载安装包并静默安装。安装到 Program Files 需要管理员授权，系统会弹出「用户账户控制」窗口，请点击「是」，App 会自动退出并重新打开。'
         : '将下载新版本，App 退出后自动替换并重启。';
   }
   if (platform == 'android') {
@@ -41,7 +41,10 @@ String _appUpdateHint(UpdateEntry e) {
 /// 进度对话框包裹任意更新任务；返回是否成功
 Future<bool> _runWithProgress(
   BuildContext context, {
-  required Future<void> Function(void Function(int received, int total) onProgress) task,
+  required Future<void> Function(
+    void Function(int received, int total) onProgress,
+    void Function(String message)? onStatus,
+  ) task,
   required String doneMessage,
 }) async {
   final progress = ValueNotifier<double?>(null);
@@ -92,6 +95,8 @@ Future<bool> _runWithProgress(
       progress.value = total > 0 ? (received / total).clamp(0.0, 1.0) : null;
       final got = _fmtBytes(received);
       detail.value = total > 0 ? '已下载 $got / ${_fmtBytes(total)}' : '已下载 $got';
+    }, (msg) {
+      detail.value = msg;
     });
     closeDialog();
     if (context.mounted) {
@@ -111,6 +116,28 @@ Future<bool> _runWithProgress(
     }
     return false;
   }
+}
+
+/// 提权安装前的一次确认：让用户知道系统会弹「用户账户控制」窗口
+Future<bool> _confirmElevatedInstall(BuildContext context, String message) async {
+  final r = await showDialog<bool>(
+    context: context,
+    builder: (dctx) => AlertDialog(
+      title: const Text('即将启动安装程序'),
+      content: Text(message),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dctx, false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dctx, true),
+          child: const Text('开始安装'),
+        ),
+      ],
+    ),
+  );
+  return r == true;
 }
 
 /// frpc 核心更新确认 + 执行
@@ -153,7 +180,8 @@ Future<void> frpcUpdateFlow(
   }
   await _runWithProgress(
     context,
-    task: (onProgress) => applyFrpcUpdate(e, onProgress: onProgress),
+    task: (onProgress, onStatus) =>
+        applyFrpcUpdate(e, onProgress: onProgress),
     doneMessage: 'frpc 已更新到 ${e.version}',
   );
 }
@@ -224,7 +252,13 @@ Future<void> showAppUpdateDialog(
             : '安装程序已启动';
     final ok = await _runWithProgress(
       context,
-      task: (onProgress) => performAppUpdate(baseUrl, e, onProgress: onProgress),
+      task: (onProgress, onStatus) => performAppUpdate(
+        baseUrl,
+        e,
+        onProgress: onProgress,
+        onStatus: onStatus,
+        confirm: (msg) => _confirmElevatedInstall(context, msg),
+      ),
       doneMessage: done,
     );
     // 成功（Windows/Android 通常会退出或调起安装器）、非强制、或浏览器流程无法校验时结束；

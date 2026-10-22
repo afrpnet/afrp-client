@@ -60,12 +60,43 @@ class _FrpAppState extends State<FrpApp> {
       appState.booted = true;
       appState.notifyListeners();
     });
+    _reportLastUpdateResult();
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
         await frpcManager.stop();
         return AppExitResponse.exit;
       },
     );
+  }
+
+  /// 上次更新若失败（未授权/超时/替换失败），启动后提示原因，避免用户以为“更新完就没反应了”
+  Future<void> _reportLastUpdateResult() async {
+    final result = await readUpdateResult();
+    if (result == null || result.ok) {
+      return;
+    }
+    // 等首帧渲染完成，此时才有可用的 Navigator context
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final ctx = appNavigatorKey.currentContext;
+      if (ctx == null || !ctx.mounted) {
+        return;
+      }
+      await showDialog<void>(
+        context: ctx,
+        builder: (dctx) => AlertDialog(
+          title: const Text('更新未完成'),
+          content: SingleChildScrollView(
+            child: Text(result.message),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dctx),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   /// 启动静默检查 App 更新；任何失败都不打扰用户（设置页可手动检查）
