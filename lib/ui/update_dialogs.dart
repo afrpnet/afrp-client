@@ -26,7 +26,8 @@ String _appUpdateHint(UpdateEntry e) {
   final platform = currentUpdatePlatform();
   if (platform == 'windows') {
     return e.channel == 'installer'
-        ? '将下载安装包并静默安装。安装到 Program Files 需要管理员授权，系统会弹出「用户账户控制」窗口，请点击「是」，App 会自动退出并重新打开。'
+        ? '将下载安装包并静默安装。安装到 Program Files 需要管理员授权，系统会弹出「用户账户控制」窗口，请点击「是」。'
+            'App 会自动退出；若旧进程仍占用程序文件（关闭主窗口只会缩到托盘），安装程序会强制结束它后继续安装，完成后 App 自动重新打开。'
         : '将下载新版本，App 退出后自动替换并重启。';
   }
   if (platform == 'android') {

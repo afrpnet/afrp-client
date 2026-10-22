@@ -7,6 +7,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:tray_manager/tray_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../frpc/frpc_manager.dart';
@@ -14,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.12';
+const String kAppVersion = '1.3.13';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -946,6 +947,14 @@ Future<void> performAppUpdate(
     }
     // 等待更新脚本启动后再退出，避免脚本还没运行程序就退出了
     await Future.delayed(const Duration(seconds: 2));
+    // 退出前先停掉 frpc、销毁托盘图标：
+    // 托盘进程会一直占着 Program Files 下的 exe/dll，安装程序会因此判定文件被占用而放弃安装
+    try {
+      await frpcManager.stop();
+    } catch (_) {}
+    try {
+      await trayManager.destroy();
+    } catch (_) {}
     exit(0);
   }
 
@@ -993,6 +1002,15 @@ class UpdateResult {
       case 'noinstaller':
         return '更新未执行：安装包未能启动。\n'
             '请到下载页手动下载安装包安装。';
+      case 'nohelper':
+        return '更新未执行：安装脚本未能生成。\n'
+            '请到下载页手动下载安装包安装。';
+      case 'installfailed':
+        return '更新未完成：安装程序没有成功写入文件。\n\n'
+            '一般是旧进程仍占用着程序文件（关闭主窗口只是缩到托盘，进程不会退出），'
+            '已尝试强制结束并重试一次。\n'
+            '请重启电脑后重试更新，或到下载页手动下载安装包安装。\n'
+            '安装日志：${logPath.isEmpty ? '（无）' : logPath}';
       case 'replace':
         return '更新未完成：程序文件替换失败（文件可能仍被占用）。\n'
             '请关闭所有 AFRP OIDC Client 进程后重试，或到下载页手动下载。';
@@ -1057,7 +1075,8 @@ Future<void> _writePsScript(File file, String content) async {
 }
 /// Windows 安装版：脚本等本进程退出 → 以管理员身份静默安装 → 从注册表读取安装路径并重启。
 /// 安装到 Program Files 必须提权，Windows 会弹 UAC 授权窗，用户点「是」才会真正安装；
-/// 脚本带 10 分钟超时并把失败原因写盘，保证 App 一定会被重新拉起，不会停在「已退出」状态。
+/// 脚本带超时并把失败原因写盘，保证 App 一定会被重新拉起，不会停在「已退出」状态。
+/// 安装与「强制结束残留进程」都放在提权的辅助脚本里：只有管理员才能结束任意权限的进程。
 Future<void> _runInstallerAndRestart(
   File installer,
   String exePath,
@@ -1068,6 +1087,9 @@ Future<void> _runInstallerAndRestart(
   final script = File(
     '${tmpDir.path}${Platform.pathSeparator}afrp_update_$stamp.ps1',
   );
+  final helper = File(
+    '${tmpDir.path}${Platform.pathSeparator}afrp_update_install_$stamp.ps1',
+  );
   final logFile = File(
     '${tmpDir.path}${Platform.pathSeparator}afrp_setup_$stamp.log',
   );
@@ -1076,13 +1098,22 @@ Future<void> _runInstallerAndRestart(
   const appId = 'A6C5E7B2-3F41-4D8E-9B07-5C2A8F16D9E3';
   final startedMarker = File('${script.path}.started');
 
-  final ps = _psInstallerUpdate
+  final helperPs = _psInstallerHelper
       .replaceAll('__INSTALLER__', _psQuote(installer.path))
       .replaceAll('__LOG__', _psQuote(logFile.path))
       .replaceAll('__STATUS__', _psQuote(status.path))
-      .replaceAll('__STARTED__', _psQuote(startedMarker.path))
       .replaceAll('__APPID__', appId)
       .replaceAll('__EXENAME__', 'afrp_oidc.exe')
+      .replaceAll('__FALLBACK__', _psQuote(exePath))
+      .replaceAll('__VERSION__', _psQuote(version));
+  await _writePsScript(helper, helperPs);
+
+  final ps = _psInstallerUpdate
+      .replaceAll('__INSTALLER__', _psQuote(installer.path))
+      .replaceAll('__HELPER__', _psQuote(helper.path))
+      .replaceAll('__LOG__', _psQuote(logFile.path))
+      .replaceAll('__STATUS__', _psQuote(status.path))
+      .replaceAll('__STARTED__', _psQuote(startedMarker.path))
       .replaceAll('__FALLBACK__', _psQuote(exePath))
       .replaceAll('__PID__', pid.toString())
       .replaceAll('__VERSION__', _psQuote(version));
@@ -1147,15 +1178,14 @@ Future<bool> _startHiddenScript(File script, File startedMarker) async {
   return false;
 }
 
-/// 安装版更新脚本：等待旧进程退出 → 提权静默安装 → 校验结果 → 重新拉起 App
+/// 安装版更新主脚本：等旧进程退出 → 提权跑辅助脚本 → 重新拉起 App
 const String _psInstallerUpdate = r'''
 $ErrorActionPreference = 'SilentlyContinue'
 $installer = '__INSTALLER__'
+$helper = '__HELPER__'
 $logFile = '__LOG__'
 $statusFile = '__STATUS__'
 $startedFile = '__STARTED__'
-$appId = '__APPID__'
-$exeName = '__EXENAME__'
 $fallback = '__FALLBACK__'
 $version = '__VERSION__'
 $appPid = __PID__
@@ -1163,44 +1193,48 @@ $appPid = __PID__
 # 0) 打标记：让 App 知道脚本确实开始执行了
 try { Set-Content -Path $startedFile -Value 'started' -ErrorAction Stop } catch { }
 
-# 1) 等旧进程退出（最多 30 秒）；App 还在跑就不要动它的文件
-$deadline = (Get-Date).AddSeconds(30)
+# 1) 等旧进程退出（最多 15 秒）；App 关闭主窗口只是缩到托盘，进程不会自己退出，
+#    真正收尾由提权后的辅助脚本强制结束
+$deadline = (Get-Date).AddSeconds(15)
 while ((Get-Date) -lt $deadline) {
   if (-not (Get-Process -Id $appPid -ErrorAction SilentlyContinue)) { break }
   Start-Sleep -Milliseconds 500
 }
-if (Get-Process -Id $appPid -ErrorAction SilentlyContinue) {
-  Set-Content -Path $statusFile -Value ("ok=False`ncode=appbusy`nlog=`nversion=$version")
-  exit 0
-}
 
-# 2) 以管理员身份运行安装程序：Windows 会弹 UAC 授权窗，需用户点「是」
+# 2) 以管理员身份跑辅助脚本：写 Program Files、结束残留进程都需要管理员权限，
+#    Windows 会弹 UAC 授权窗，需用户点「是」。
 #    Start-Process -Verb RunAs 会一直阻塞到用户做出选择，所以放进后台 Job，
 #    主脚本才能对「用户一直不点授权」设超时兜底（否则 App 退出后就再也没人拉起）。
 $code = 'noinstaller'
-$procId = 0
 if (-not (Test-Path $installer)) {
   $code = 'noinstaller'
+} elseif (-not (Test-Path $helper)) {
+  $code = 'nohelper'
 } else {
-  # 清掉可能残留的旧日志，避免把上一次的安装结果当成本次结果
-  if (Test-Path $logFile) { Remove-Item $logFile -Force -ErrorAction SilentlyContinue }
   $job = Start-Job -ScriptBlock {
-    param($exe, $log)
+    param($helper)
     try {
-      $p = Start-Process -FilePath $exe -Verb RunAs -PassThru -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS',"/LOG=$log")
+      # Start-Process 会用空格拼接参数，脚本路径含空格时必须自己加引号
+      $p = Start-Process -FilePath 'powershell.exe' -Verb RunAs -PassThru -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $helper + '"'))
       return @{ ok = $true; id = $p.Id }
     } catch {
       return @{ ok = $false; id = 0 }
     }
-  } -ArgumentList $installer, $logFile
+  } -ArgumentList $helper
 
   # 等用户在 UAC 窗口点「是」/「否」，最多 5 分钟
   if (Wait-Job $job -Timeout 300) {
     $r = Receive-Job $job -ErrorAction SilentlyContinue
     Remove-Job $job -Force -ErrorAction SilentlyContinue
     if ($r -and $r.ok) {
-      $code = 'running'
-      $procId = $r.id
+      # 等提权脚本跑完（最多 15 分钟）
+      $deadline = (Get-Date).AddSeconds(900)
+      $finished = $false
+      while ((Get-Date) -lt $deadline) {
+        if (-not (Get-Process -Id $r.id -ErrorAction SilentlyContinue)) { $finished = $true; break }
+        Start-Sleep -Milliseconds 500
+      }
+      $code = if ($finished) { 'done' } else { 'timeout' }
     } else {
       $code = 'denied'
     }
@@ -1212,30 +1246,72 @@ if (-not (Test-Path $installer)) {
   }
 }
 
-if ($code -eq 'running') {
-  # 等安装结束（最多 10 分钟）
-  $deadline = (Get-Date).AddSeconds(600)
-  while ((Get-Date) -lt $deadline) {
-    if (-not (Get-Process -Id $procId -ErrorAction SilentlyContinue)) { break }
-    Start-Sleep -Milliseconds 500
-  }
-  if (Get-Process -Id $procId -ErrorAction SilentlyContinue) {
-    $code = 'timeout'
-  } else {
-    $code = 'done'
-  }
+# 3) 辅助脚本会自己写状态文件；它没能写时兜底
+if (-not (Test-Path $statusFile)) {
+  Set-Content -Path $statusFile -Value ("ok=False`ncode=$code`nlog=`nversion=$version`ntarget=$fallback")
 }
 
-# 3) 以 Inno 日志判断是否真的装成功
-$ok = $false
-if (Test-Path $logFile) {
+# 4) 重新拉起 App（普通权限启动，避免 App 变成管理员运行）
+$target = $fallback
+if (Test-Path $statusFile) {
   try {
-    $txt = [System.IO.File]::ReadAllText($logFile)
-    if ($txt -match 'Installation process succeeded') { $ok = $true }
+    foreach ($line in [System.IO.File]::ReadAllLines($statusFile)) {
+      if ($line -like 'target=*') {
+        $t = $line.Substring(7).Trim()
+        if ($t) { $target = $t }
+      }
+    }
   } catch { }
 }
+if (Test-Path $target) { Start-Process $target }
+''';
 
-# 4) 找安装目录：注册表 64 位视图优先，再退 32 位视图，最后用当前程序路径
+/// 安装版更新辅助脚本（管理员权限运行）：强制结束残留进程 → 静默安装 → 写结果
+const String _psInstallerHelper = r'''
+$ErrorActionPreference = 'SilentlyContinue'
+$installer = '__INSTALLER__'
+$logFile = '__LOG__'
+$statusFile = '__STATUS__'
+$appId = '__APPID__'
+$exeName = '__EXENAME__'
+$fallback = '__FALLBACK__'
+$version = '__VERSION__'
+
+# 结束所有还在运行的客户端进程。
+# App 关闭主窗口时只是缩到托盘，进程不会退出；安装程序替换 Program Files 下的
+# exe/dll 时发现进程还在，会提示「无法关闭所有应用程序」并直接放弃安装。
+function Stop-App {
+  Get-Process -Name 'afrp_oidc' -ErrorAction SilentlyContinue |
+    ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
+  Start-Sleep -Seconds 2
+}
+
+function Install-Package {
+  if (Test-Path $logFile) { Remove-Item $logFile -Force -ErrorAction SilentlyContinue }
+  # /LOG 路径含空格时必须自己加引号，Start-Process 只用空格拼接参数
+  $p = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS',('/LOG="{0}"' -f $logFile)) -PassThru
+  $p.WaitForExit()
+  $ok = $false
+  $busy = $false
+  if (Test-Path $logFile) {
+    try {
+      $txt = [System.IO.File]::ReadAllText($logFile)
+      if ($txt -match 'Installation process succeeded') { $ok = $true }
+      elseif ($txt -match 'could not be shut down') { $busy = $true }
+    } catch { }
+  }
+  return @{ ok = $ok; busy = $busy }
+}
+
+Stop-App
+$r = Install-Package
+if (-not $r.ok -and $r.busy) {
+  # 仍有进程占用安装目录，强制结束后再试一次
+  Stop-App
+  $r = Install-Package
+}
+
+# 找安装目录：注册表 64 位视图优先，再退 32 位视图，最后用当前程序路径
 $instDir = ''
 foreach ($view in @('HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
   if ($instDir) { break }
@@ -1246,10 +1322,8 @@ if (-not $instDir) { $instDir = Split-Path -Parent $fallback }
 $target = Join-Path $instDir $exeName
 if (-not (Test-Path $target)) { $target = $fallback }
 
-Set-Content -Path $statusFile -Value ("ok=$ok`ncode=$code`nlog=$logFile`nversion=$version")
-
-# 5) 重新拉起 App
-if (Test-Path $target) { Start-Process $target }
+$code = if ($r.ok) { 'done' } else { 'installfailed' }
+Set-Content -Path $statusFile -Value ("ok=$($r.ok)`ncode=$code`nlog=$logFile`nversion=$version`ntarget=$target")
 ''';
 
 /// 免安装版更新脚本：等待旧进程退出 → 覆盖程序文件 → 重新拉起 App
@@ -1264,15 +1338,16 @@ $appPid = __PID__
 
 try { Set-Content -Path $startedFile -Value 'started' -ErrorAction Stop } catch { }
 
-$deadline = (Get-Date).AddSeconds(30)
+# 等旧进程退出（最多 15 秒）
+$deadline = (Get-Date).AddSeconds(15)
 while ((Get-Date) -lt $deadline) {
   if (-not (Get-Process -Id $appPid -ErrorAction SilentlyContinue)) { break }
   Start-Sleep -Milliseconds 500
 }
-if (Get-Process -Id $appPid -ErrorAction SilentlyContinue) {
-  Set-Content -Path $statusFile -Value ("ok=False`ncode=appbusy`nlog=`nversion=$version")
-  exit 0
-}
+# 还没退出就强制结束：关闭主窗口只是缩到托盘，进程不会自己退出，
+# 而正在运行的 exe 无法被覆盖
+Stop-Process -Id $appPid -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
 
 $ok = $false
 try {
