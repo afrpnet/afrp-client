@@ -79,7 +79,9 @@ String buildFrpcToml({
     ..writeln('auth.oidc.audience = "${_esc(config?.oidcAudience ?? '')}"')
     ..writeln('auth.oidc.scope = "${_esc(config?.oidcScope ?? '')}"')
     // 上报客户端类型，网站后台可显示该账号在用哪种客户端连接
-    ..writeln('auth.oidc.additionalEndpointParams.client_type = "${_esc(_clientType())}"');
+    ..writeln('auth.oidc.additionalEndpointParams.client_type = "${_esc(_clientType())}"')
+    // 同一份信息随 frp 登录包上报，网站「连接记录」可按接入方式筛选
+    ..writeln('metadatas = { client_type = "${_esc(_clientType())}" }');
 
   for (final t in tunnels) {
     b
