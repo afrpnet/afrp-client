@@ -1082,8 +1082,10 @@ class UpdateResult {
             '通常是管理员授权窗口一直没有被确认。\n'
             '你可以重新发起更新，或到下载页手动下载安装包安装。';
       case 'noinstaller':
-        return '更新未执行：安装包未能启动。\n'
-            '请到下载页手动下载安装包安装。';
+        return '更新未执行：安装包未能启动。\n\n'
+            '安装包可能刚下载完就被 Windows 安全中心隔离删除了。\n'
+            '请到「Windows 安全中心 → 病毒和威胁防护 → 保护历史记录」查看并放行，'
+            '或到下载页手动下载安装包安装。';
       case 'nohelper':
         return '更新未执行：安装脚本未能生成。\n'
             '请到下载页手动下载安装包安装。';
@@ -1427,6 +1429,7 @@ function Test-VersionInstalled {
 }
 
 function Install-Package($waitSecs) {
+  if (-not (Test-Path $installer)) { return $false }
   if (Test-Path $logFile) { Remove-Item $logFile -Force -ErrorAction SilentlyContinue }
   # /LOG 路径含空格时必须自己加引号，Start-Process 只用空格拼接参数。
   # 用 /SILENT 而不是 /VERYSILENT：完全无窗口的静默安装是杀软行为启发式的高危特征，
