@@ -15,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.14';
+const String kAppVersion = '1.3.15';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -129,6 +129,13 @@ class UpdateManifest {
 
 String _trimBase(String baseUrl) => baseUrl.replaceAll(RegExp(r'/+$'), '');
 
+/// GitHub 源基址：形如 https://github.com/ 或 https://ghfast.top/https://github.com/
+/// 末尾必须保留斜杠，否则拼出来的 URL 会少一个分隔符
+String _ghBase(String base) {
+  final b = base.trim();
+  return b.endsWith('/') ? b : '$b/';
+}
+
 String manifestUrl(String baseUrl) =>
     '${_trimBase(baseUrl)}/download/manifest.json';
 
@@ -151,7 +158,10 @@ String r2DownloadUrl(String filename, {String subdir = ''}) {
 
 /// 判断文件名是否属于 frpc 类别
 bool isFrpcFile(String filename) {
+  // R2 上的 frpc 产物名统一是 frpc_ 前缀（frpc_x_windows_amd64.exe），
+  // 上游整包是 frp_ 前缀（frp_x_windows_amd64.zip），两者都要归到 frpc 子目录
   return filename.startsWith('frp_') ||
+      filename.startsWith('frpc_') ||
       filename.endsWith('.ipk') ||
       filename.contains('luci-app-afrp');
 }
@@ -230,7 +240,7 @@ Future<GitHubReleaseInfo> fetchGitHubRelease(
   final c = client ?? http.Client();
   String lastErr = '';
   for (final base in kGitHubSources) {
-    final atomUrl = '${_trimBase(base)}$repo/releases.atom';
+    final atomUrl = '${_ghBase(base)}$repo/releases.atom';
     try {
       final res = await c.get(Uri.parse(atomUrl)).timeout(timeout);
       if (res.statusCode != 200) {
@@ -314,7 +324,7 @@ List<String>? matchGitHubAsset(
     if (release.assetNames.contains(name)) {
       // 构造下载 URL（用第一个源，下载时会回退）
       final url =
-          '${_trimBase(kGitHubSources[0])}$repo/releases/download/${release.tag}/$name';
+          '${_ghBase(kGitHubSources[0])}$repo/releases/download/${release.tag}/$name';
       return [name, url];
     }
   }
@@ -330,7 +340,7 @@ String githubDownloadUrl(
 }) {
   repo ??= kGhRepo;
   final base = kGitHubSources[sourceIndex % kGitHubSources.length];
-  return '${_trimBase(base)}$repo/releases/download/${release.tag}/$assetName';
+  return '${_ghBase(base)}$repo/releases/download/${release.tag}/$assetName';
 }
 
 /// 拉取并解析更新清单；网络/格式错误统一抛 [UpdateException]
@@ -502,8 +512,31 @@ UpdateEntry? chooseEntry(
 // 下载与解压
 // ---------------------------------------------------------------------------
 
+/// 下载候选源：URL + 本地文件名。
+/// 同一个版本在不同站点可能是不同封装（R2 直接给二进制，GitHub 给上游整包），
+/// 文件名必须各自保留，否则整包会被当成二进制直接覆盖 frpc。
+class _DownloadSource {
+  final String url;
+  final String fileName;
+  const _DownloadSource(this.url, this.fileName);
+}
+
+/// 取 URL 末段作为文件名；取不到就用条目文件名
+String _sourceFileName(String url, String fallback) {
+  try {
+    final segs = Uri.parse(url).pathSegments;
+    if (segs.isNotEmpty) {
+      final name = segs.last;
+      if (name.isNotEmpty && name.contains('.')) {
+        return name;
+      }
+    }
+  } catch (_) {}
+  return fallback;
+}
+
 /// 下载条目到临时目录并校验 SHA-256（清单未提供 sha256 时跳过校验）
-/// 支持多源回退：R2（站内镜像）→ GitHub URL 会依次尝试官方和代理
+/// 支持多源回退：R2（站内镜像）→ 清单其它镜像 → 条目主地址，GitHub 地址还会展开官方 + 代理
 Future<File> downloadUpdateFile(
   UpdateEntry entry, {
   void Function(int received, int total)? onProgress,
@@ -513,41 +546,64 @@ Future<File> downloadUpdateFile(
     throw UpdateException('该条目没有下载地址');
   }
 
-  // 构建下载 URL 列表：优先 R2，其次 GitHub
-  final urls = <String>[];
+  final sources = <_DownloadSource>[];
+  void addSource(String url) {
+    final u = url.trim();
+    if (u.isEmpty) {
+      return;
+    }
+    if (sources.any((s) => s.url == u)) {
+      return;
+    }
+    sources.add(_DownloadSource(u, _sourceFileName(u, entry.file)));
+  }
 
-  // 1. 添加 R2 站内镜像（如果 mirrors 中有）
+  // 1. R2 站内镜像优先：清单给了就用，否则按文件类型构造
   final r2Mirror = entry.mirrors.firstWhere(
     (m) => m['name'] == '站内镜像',
     orElse: () => <String, dynamic>{},
   );
   if (r2Mirror.isNotEmpty && r2Mirror['url'] != null) {
-    urls.add(r2Mirror['url'] as String);
+    addSource(r2Mirror['url'] as String);
   } else {
-    // 如果没有 mirror，根据文件类型构造 R2 URL
-    final subdir = r2SubdirForFile(entry.file);
-    urls.add(r2DownloadUrl(entry.file, subdir: subdir));
+    addSource(r2DownloadUrl(entry.file, subdir: r2SubdirForFile(entry.file)));
   }
 
-  // 2. 如果是 GitHub URL，添加多源列表
-  if (entry.url.contains('github.com/')) {
-    // 从 URL 提取 repo/tag/name
+  // 2. 清单里的其它镜像（GitHub 官方 / 代理 / 网盘）逐个尝试
+  for (final m in entry.mirrors) {
+    final u = m['url'];
+    if (u is String) {
+      addSource(u);
+    }
+  }
+
+  // 3. 条目主地址
+  addSource(entry.url);
+
+  // 4. GitHub 地址展开为「官方 + 代理」多源
+  final urls = <_DownloadSource>[];
+  for (final s in sources) {
+    if (!s.url.contains('github.com/')) {
+      urls.add(s);
+      continue;
+    }
     final ghMatch = RegExp(
       r'github\.com/([^/]+/[^/]+)/releases/download/([^/]+)/(.+)',
-    ).firstMatch(entry.url);
-    if (ghMatch != null) {
-      final repo = ghMatch.group(1)!;
-      final tag = ghMatch.group(2)!;
-      final name = ghMatch.group(3)!;
-      for (final base in kGitHubSources) {
-        urls.add('${_trimBase(base)}$repo/releases/download/$tag/$name');
-      }
-    } else {
-      urls.add(entry.url);
+    ).firstMatch(s.url);
+    if (ghMatch == null) {
+      urls.add(s);
+      continue;
     }
-  } else if (!urls.contains(entry.url)) {
-    // 3. 添加原始 URL（如果不是 GitHub 且不在列表中）
-    urls.add(entry.url);
+    final repo = ghMatch.group(1)!;
+    final tag = ghMatch.group(2)!;
+    final name = ghMatch.group(3)!;
+    for (final base in kGitHubSources) {
+      final u = '${_ghBase(base)}$repo/releases/download/$tag/$name';
+      if (urls.any((e) => e.url == u)) {
+        continue;
+      }
+      urls.add(_DownloadSource(u, name));
+    }
   }
 
   final tmpDir = await getTemporaryDirectory();
@@ -555,18 +611,17 @@ Future<File> downloadUpdateFile(
   if (!dir.existsSync()) {
     dir.createSync(recursive: true);
   }
-  final out = File(
-    '${dir.path}${Platform.pathSeparator}${entry.file.isEmpty ? 'update.bin' : entry.file}',
-  );
 
   final c = client ?? http.Client();
-  IOSink? sink;
-  var success = false;
   String lastErr = '';
 
-  for (final url in urls) {
+  for (final s in urls) {
+    final out = File(
+      '${dir.path}${Platform.pathSeparator}${s.fileName.isEmpty ? 'update.bin' : s.fileName}',
+    );
+    IOSink? sink;
     try {
-      final res = await c.send(http.Request('GET', Uri.parse(url)));
+      final res = await c.send(http.Request('GET', Uri.parse(s.url)));
       if (res.statusCode != 200) {
         lastErr = 'HTTP ${res.statusCode}';
         continue;
@@ -587,13 +642,15 @@ Future<File> downloadUpdateFile(
       await sink.flush();
       await sink.close();
       sink = null;
+      // 清单里的 sha256 对应 entry.file 本身；换封装（上游整包）时无法直接比对，
+      // 那种情况留给解包后按二进制校验。
       if (entry.sha256.isNotEmpty &&
+          s.fileName == entry.file &&
           sha.hexDigest() != entry.sha256.toLowerCase()) {
         lastErr = 'SHA-256 不一致';
         if (out.existsSync()) out.deleteSync();
         continue;
       }
-      success = true;
       if (client == null) c.close();
       return out;
     } on UpdateException {
@@ -670,7 +727,7 @@ class FrpcUpdateCheck {
   bool get hasUpdate => compareVersions(entry.version, currentVersion) > 0;
 }
 
-/// 查询 frpc 更新；优先从 GitHub Release 获取，失败回退到网站清单
+/// 查询 frpc 更新；优先用网站清单（版本与下载页一致），失败回退到 GitHub Release
 Future<FrpcUpdateCheck?> checkFrpcUpdate(
   String baseUrl, {
   http.Client? client,
@@ -691,7 +748,24 @@ Future<FrpcUpdateCheck?> checkFrpcUpdate(
     // arch 保持原样（arm/arm64/amd64），由 currentUpdateArch() 返回
   }
 
-  // 先试 GitHub
+  // 1. 网站清单为准
+  try {
+    final manifest = await fetchUpdateManifest(baseUrl, client: client);
+    final entry = chooseEntry(
+      manifest,
+      kind: 'frpc',
+      platform: frpcPlatform,
+      arch: arch,
+    );
+    if (entry != null) {
+      final current = await frpcManager.refreshInstalledVersion();
+      return FrpcUpdateCheck(entry, current);
+    }
+  } catch (_) {
+    // 清单不可用，回退到 GitHub
+  }
+
+  // 2. 回退：GitHub Release
   try {
     final release = await fetchGitHubRelease(kFrpcRepo, client: client);
     final match = _matchFrpcAsset(release, frpcPlatform, arch);
@@ -716,22 +790,10 @@ Future<FrpcUpdateCheck?> checkFrpcUpdate(
       return FrpcUpdateCheck(entry, current);
     }
   } catch (_) {
-    // GitHub 失败，回退到网站
+    // GitHub 也没有可用版本
   }
 
-  // 回退：网站 manifest
-  final manifest = await fetchUpdateManifest(baseUrl, client: client);
-  final entry = chooseEntry(
-    manifest,
-    kind: 'frpc',
-    platform: frpcPlatform,
-    arch: arch,
-  );
-  if (entry == null) {
-    return null;
-  }
-  final current = await frpcManager.refreshInstalledVersion();
-  return FrpcUpdateCheck(entry, current);
+  return null;
 }
 
 /// 匹配 frpc GitHub 资产
@@ -758,6 +820,12 @@ List<String>? _matchFrpcAsset(
   return null;
 }
 
+/// 是否为压缩包名（整包）
+bool _isArchiveName(String name) {
+  final n = name.toLowerCase();
+  return n.endsWith('.zip') || n.endsWith('.tar.gz') || n.endsWith('.tgz');
+}
+
 /// 下载并替换 frpc 二进制（会先断开当前隧道连接）
 Future<void> applyFrpcUpdate(
   UpdateEntry entry, {
@@ -766,6 +834,15 @@ Future<void> applyFrpcUpdate(
   final file = await downloadUpdateFile(entry, onProgress: onProgress);
   final exeName = Platform.isWindows ? 'frpc.exe' : 'frpc';
   final binary = await extractExecutable(file, preferredName: exeName);
+  // 走的是上游整包（zip/tar.gz）时，清单里的 sha256 对应解出来的二进制，这里补校验
+  if (entry.sha256.isNotEmpty &&
+      !_isArchiveName(entry.file) &&
+      _isArchiveName(file.path)) {
+    final digest = await sha256OfFile(binary.path);
+    if (digest != entry.sha256.toLowerCase()) {
+      throw UpdateException('SHA-256 校验失败，请重试或到下载页手动下载');
+    }
+  }
   await frpcManager.applyUpdate(binary, entry.version);
 }
 
@@ -831,7 +908,24 @@ Future<AppUpdateCheck?> checkAppUpdate(
       channel = 'hap';
   }
 
-  // 先试 GitHub
+  // 1. 网站清单为准（与下载页、与本站发布的版本一致）
+  try {
+    final manifest = await fetchUpdateManifest(baseUrl, client: client);
+    final entry = chooseEntry(
+      manifest,
+      kind: 'app',
+      platform: platform,
+      channel: channel,
+      arch: arch,
+    );
+    if (entry != null) {
+      return AppUpdateCheck(entry, kAppVersion);
+    }
+  } catch (_) {
+    // 清单不可用，回退到 GitHub
+  }
+
+  // 2. 回退：GitHub Release
   try {
     final release = await fetchGitHubRelease(
       kGhRepo,
@@ -858,22 +952,10 @@ Future<AppUpdateCheck?> checkAppUpdate(
       return AppUpdateCheck(entry, kAppVersion);
     }
   } catch (_) {
-    // GitHub 失败，回退到网站
+    // GitHub 也没有可用版本
   }
 
-  // 回退：网站 manifest
-  final manifest = await fetchUpdateManifest(baseUrl, client: client);
-  final entry = chooseEntry(
-    manifest,
-    kind: 'app',
-    platform: platform,
-    channel: channel,
-    arch: arch,
-  );
-  if (entry == null) {
-    return null;
-  }
-  return AppUpdateCheck(entry, kAppVersion);
+  return null;
 }
 
 /// 匹配 App GitHub 资产
