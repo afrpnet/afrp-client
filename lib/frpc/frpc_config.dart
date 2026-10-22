@@ -27,6 +27,18 @@ Future<String?> resolveServerAddr(String host) async {
   }
 }
 
+/// 客户端类型标识：随 Token 请求上报，网站后台据此显示用户用哪种客户端连接
+String _clientType() {
+  final os = Platform.operatingSystem.toLowerCase();
+  if (os == 'android') return 'app-android';
+  if (os == 'ios') return 'app-ios';
+  if (os == 'windows') return 'app-windows';
+  if (os == 'linux') return 'app-linux';
+  if (os == 'macos') return 'app-macos';
+  if (os.contains('ohos') || os.contains('harmony')) return 'app-ohos';
+  return 'app-unknown';
+}
+
 /// 生成 frpc.toml：
 /// - 服务器地址 / 端口 / user 来自所选服务器与账号
 /// - OIDC 认证字段全部自动填充（对应网页端 frpc_snippet 模板）
@@ -65,7 +77,9 @@ String buildFrpcToml({
     ..writeln('auth.oidc.clientSecret = "${_esc(clientSecret)}"')
     ..writeln('auth.oidc.tokenEndpointURL = "${_esc(tokenEndpoint)}"')
     ..writeln('auth.oidc.audience = "${_esc(config?.oidcAudience ?? '')}"')
-    ..writeln('auth.oidc.scope = "${_esc(config?.oidcScope ?? '')}"');
+    ..writeln('auth.oidc.scope = "${_esc(config?.oidcScope ?? '')}"')
+    // 上报客户端类型，网站后台可显示该账号在用哪种客户端连接
+    ..writeln('auth.oidc.additionalEndpointParams.client_type = "${_esc(_clientType())}"');
 
   for (final t in tunnels) {
     b
