@@ -21,8 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        run: bash .github/sync-version-ci.sh
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - name: Install Linux deps (libgl1)
         run: |

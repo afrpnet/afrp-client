@@ -107,6 +107,25 @@ cd /tmp/luci-app-afrp-1.1.0 && ./install.sh
 
 隧道配置和登录状态保存在本机，换设备需重新登录。
 
+## 发版流程
+
+版本号真源是 `pubspec.yaml`，其余落点由脚本统一改写，不要手动编辑。
+
+```bash
+# 1. 改版本并同步所有落点（版本变化时 build 号自动 +1）
+bash tool/sync-version.sh 1.3.18
+
+# 2. 校验各落点一致（CI 也会跑同一份检查，不一致直接失败）
+bash tool/sync-version.sh --check 1.3.18
+
+# 3. 提交并打 tag，tag 版本必须与 pubspec.yaml 一致
+git add -A && git commit -m "chore: bump version to 1.3.18"
+git tag v1.3.18 && git push origin main && git push origin v1.3.18
+```
+
+同步落点：`pubspec.yaml`、`lib/core/updater.dart`、`installer/setup.iss`、`openwrt/luci-app-afrp/Makefile`、`ohos/AppScope/app.json5`。
+OpenWrt LuCI 页面上的版本号由 `openwrt/tools/build-ipk.php` 在打包时注入，无需手改。
+
 ## 许可证
 
 MIT

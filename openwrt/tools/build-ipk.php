@@ -46,6 +46,12 @@ function usage(): void
 
 // ---------------------------------------------------------------- 版本号
 
+/** 页面版本号占位符：源码里留占位符，打包时替换成包版本，避免写死后与版本漂移 */
+const VERSION_PLACEHOLDER = '__AFRP_VERSION__';
+
+/** 需要注入版本号的载荷文件（LuCI 页面标题旁的版本号） */
+const VERSION_TARGET = 'www/luci-static/resources/view/afrp/client.js';
+
 function pkg_version(string $mkPath): array
 {
     $mk  = (string)@file_get_contents($mkPath);
@@ -56,6 +62,18 @@ function pkg_version(string $mkPath): array
     if (!preg_match('/^[A-Za-z0-9._+()-]{1,32}$/', $ver)) { die_msg('PKG_VERSION 非法: ' . $ver); }
     if (!preg_match('/^[0-9]+$/', $rel)) { die_msg('PKG_RELEASE 非法: ' . $rel); }
     return [$ver, $rel];
+}
+
+/** 读取载荷内容，版本号占位符在此替换成实际包版本 */
+function payload_content(string $dst, string $src, string $ver): string
+{
+    $data = @file_get_contents($src);
+    if ($data === false) { die_msg('读取失败: ' . $src); }
+    if ($dst !== VERSION_TARGET) { return $data; }
+    if (strpos($data, VERSION_PLACEHOLDER) === false) {
+        die_msg($dst . ' 缺少 ' . VERSION_PLACEHOLDER . ' 占位符，页面版本号无法注入');
+    }
+    return str_replace(VERSION_PLACEHOLDER, $ver, $data);
 }
 
 // ---------------------------------------------------------------- 收集安装载荷
@@ -268,7 +286,7 @@ function build_apk_container(array $files, array $dirs, string $ver, string $rel
         $target = $root . '/' . $dst;
         $tdir = dirname($target);
         if (!is_dir($tdir) && !@mkdir($tdir, 0755, true)) { die_msg('无法创建目录: ' . $tdir); }
-        if (!@copy($info['src'], $target)) { die_msg('拷贝到 apk staging 失败: ' . $target); }
+        if (@file_put_contents($target, payload_content($dst, $info['src'], $ver)) === false) { die_msg('写入 apk staging 失败: ' . $target); }
         @chmod($target, $info['mode']);
     }
 
@@ -398,8 +416,7 @@ function build(): array
     $dat = '';
     foreach ($dirs as $d) { tar_append($dat, $mtime, './' . $d . '/', 0755, '', '5'); }
     foreach ($files as $dst => $info) {
-        $data = @file_get_contents($info['src']);
-        if ($data === false) { die_msg('读取失败: ' . $info['src']); }
+        $data = payload_content($dst, $info['src'], $ver);
         tar_append($dat, $mtime, './' . $dst, $info['mode'], $data);
     }
     $datGz = gzencode(tar_finish($dat), 9);
@@ -429,7 +446,7 @@ function build(): array
     tar_append($tgz, $mtime, $top . '/files/', 0755, '', '5');
     foreach ($dirs as $d) { tar_append($tgz, $mtime, $top . '/files/' . $d . '/', 0755, '', '5'); }
     foreach ($files as $dst => $info) {
-        tar_append($tgz, $mtime, $top . '/files/' . $dst, $info['mode'], (string)file_get_contents($info['src']));
+        tar_append($tgz, $mtime, $top . '/files/' . $dst, $info['mode'], payload_content($dst, $info['src'], $ver));
     }
     $tgzGz = gzencode(tar_finish($tgz), 9);
     if ($tgzGz === false) { die_msg('tar.gz 压缩失败'); }
@@ -526,10 +543,19 @@ function verify(array $b): bool
         foreach ($b['files'] as $dst => $info) {
             $key = './' . $dst;
             if (!isset($datFiles[$key])) { $errs[] = "data 缺少文件: {$dst}"; continue; }
-            if ($datFiles[$key]['size'] !== (int)@filesize($info['src'])) { $errs[] = "{$dst} 大小不一致"; }
+            if ($datFiles[$key]['size'] !== strlen(payload_content($dst, $info['src'], $b['ver']))) { $errs[] = "{$dst} 大小不一致"; }
             if (!in_array($datFiles[$key]['mode'], [$info['mode']], true)) {
                 $errs[] = sprintf('%s 权限应为 %04o，实际 %04o', $dst, $info['mode'], $datFiles[$key]['mode']);
             }
+        }
+        // 页面版本号：产物里必须已替换成包版本，不能残留占位符
+        $cjKey = './' . VERSION_TARGET;
+        if (isset($datFiles[$cjKey])) {
+            $body = $datFiles[$cjKey]['data'];
+            if (strpos($body, VERSION_PLACEHOLDER) !== false) { $errs[] = '产物中仍有未替换的版本号占位符'; }
+            if (strpos($body, ' v' . $b['ver'] . "'") === false) { $errs[] = 'LuCI 页面未写入版本号 v' . $b['ver']; }
+        } else {
+            $errs[] = 'data 缺少文件: ' . VERSION_TARGET;
         }
         $dirCount = 0;
         foreach ($datFiles as $n => $f) { if ($f['type'] === '5') { $dirCount++; } }

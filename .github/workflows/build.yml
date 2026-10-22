@@ -18,6 +18,9 @@ jobs:
       tag: ${{ steps.get-ver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify version consistency
+        shell: bash
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
       - name: Resolve version
         id: get-ver
         run: |
@@ -46,9 +49,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
+      - name: Verify version consistency
         shell: bash
-        run: bash .github/sync-version-ci.sh
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - uses: subosito/flutter-action@v2
         with:
@@ -114,9 +117,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
+      - name: Verify version consistency
         shell: bash
-        run: bash .github/sync-version-ci.sh
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - uses: subosito/flutter-action@v2
         with:
@@ -177,8 +180,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        run: bash .github/sync-version-ci.sh
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - uses: subosito/flutter-action@v2
         with:
@@ -212,8 +215,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        run: bash .github/sync-version-ci.sh
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - uses: subosito/flutter-action@v2
         with:
@@ -246,8 +249,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        run: bash .github/sync-version-ci.sh
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - uses: subosito/flutter-action@v2
         with:
@@ -288,8 +291,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        run: bash .github/sync-version-ci.sh
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - name: Install Flutter manually
         run: |
@@ -337,8 +340,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        run: bash .github/sync-version-ci.sh
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -424,8 +427,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        run: bash .github/sync-version-ci.sh
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - name: Install Linux deps (libgl1)
         run: |
@@ -699,8 +702,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
-        run: bash .github/sync-version-ci.sh
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - uses: shivammathur/setup-php@v2
         with:

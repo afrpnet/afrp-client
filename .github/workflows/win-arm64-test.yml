@@ -16,9 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
+      - name: Verify version consistency
         shell: bash
-        run: bash .github/sync-version-ci.sh
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       # stable 不发布 Windows arm64 归档；master 会让 action 按 pin 的 tag 克隆 SDK
       # 并拉取宿主自带的 Dart SDK（参考 FlClash 的做法）。

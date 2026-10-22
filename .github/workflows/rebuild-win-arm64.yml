@@ -17,9 +17,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync version from tag
+      - name: Verify version consistency
         shell: bash
-        run: bash .github/sync-version-ci.sh
+        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
 
       - uses: subosito/flutter-action@v2
         with:
