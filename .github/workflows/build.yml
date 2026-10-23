@@ -201,6 +201,8 @@ jobs:
     needs: create-release
     runs-on: macos-latest
     timeout-minutes: 90
+    # arm64 runner 偶发排队不到，不让单个平台拖垮整轮发版（缺产物时用 rebuild-macos-arm64.yml 补建）
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -219,6 +221,16 @@ jobs:
           tar -czf assets/frpc/macos/frpc_darwin_arm64.tar.gz -C /tmp/frpc_arm64/frp_${FRPC_VERSION}_darwin_arm64 frpc
       - name: Build macOS
         run: flutter build macos --release
+      - name: Verify architecture (must be arm64)
+        run: |
+          set -e
+          BIN="build/macos/Build/Products/Release/AFRP OIDC Client.app/Contents/MacOS/AFRP OIDC Client"
+          ARCHS=$(lipo -archs "$BIN")
+          echo "archs: $ARCHS"
+          case "$ARCHS" in
+            *arm64*) echo "✅ 确认是 arm64 构建" ;;
+            *) echo "::error::不是 arm64 构建（runner 可能落到 Intel 镜像）: $ARCHS"; exit 1 ;;
+          esac
       - name: Package & Upload
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')

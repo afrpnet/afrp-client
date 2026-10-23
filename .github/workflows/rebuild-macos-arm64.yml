@@ -1,0 +1,200 @@
+name: Rebuild macOS arm64 (dispatch)
+
+# 单独重建 macOS Apple Silicon 免安装版并覆盖发布（不动其它平台）。
+# 用途：发版时 macos-latest 的 arm64 runner 排队不到，导致该平台产物缺失时补建。
+# 从当前分支 HEAD 构建；release / R2 / manifest 只更新 macos arm64 条目。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Download frpc (macOS ARM64)
+        run: |
+          set -e
+          FRPC_VERSION="0.71.0"
+          mkdir -p assets/frpc/macos
+          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_arm64.tar.gz" -o frpc_arm64.tar.gz
+          mkdir -p /tmp/frpc_arm64 && tar -xzf frpc_arm64.tar.gz -C /tmp/frpc_arm64
+          tar -czf assets/frpc/macos/frpc_darwin_arm64.tar.gz -C /tmp/frpc_arm64/frp_${FRPC_VERSION}_darwin_arm64 frpc
+
+      - name: Build macOS
+        run: flutter build macos --release
+
+      - name: Verify architecture (must be arm64)
+        run: |
+          set -e
+          BIN="build/macos/Build/Products/Release/AFRP OIDC Client.app/Contents/MacOS/AFRP OIDC Client"
+          if [ ! -f "$BIN" ]; then
+            echo "::error::找不到可执行文件 $BIN"
+            ls -la "build/macos/Build/Products/Release/" || true
+            exit 1
+          fi
+          ARCHS=$(lipo -archs "$BIN")
+          echo "archs: $ARCHS"
+          case "$ARCHS" in
+            *arm64*) echo "✅ 确认是 arm64 构建" ;;
+            *) echo "::error::不是 arm64 构建（runner 可能落到 Intel 镜像）: $ARCHS"; exit 1 ;;
+          esac
+
+      - name: Package & Upload
+        run: |
+          set -e
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          mkdir -p dist
+          cd build/macos/Build/Products/Release
+          ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_arm64.zip"
+          cd ../../../../
+          ls -la dist/
+          gh release upload "v$VER" dist/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-rebuild
+          path: dist/*
+          if-no-files-found: warn
+
+  # 主标签拿不到 arm64 runner 时换一个镜像版本再试一次（macos-14 与 macos-15 都是 Apple Silicon）
+  build_fallback:
+    needs: build
+    if: failure()
+    runs-on: macos-14
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Download frpc (macOS ARM64)
+        run: |
+          set -e
+          FRPC_VERSION="0.71.0"
+          mkdir -p assets/frpc/macos
+          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_arm64.tar.gz" -o frpc_arm64.tar.gz
+          mkdir -p /tmp/frpc_arm64 && tar -xzf frpc_arm64.tar.gz -C /tmp/frpc_arm64
+          tar -czf assets/frpc/macos/frpc_darwin_arm64.tar.gz -C /tmp/frpc_arm64/frp_${FRPC_VERSION}_darwin_arm64 frpc
+
+      - name: Build macOS
+        run: flutter build macos --release
+
+      - name: Verify architecture (must be arm64)
+        run: |
+          set -e
+          BIN="build/macos/Build/Products/Release/AFRP OIDC Client.app/Contents/MacOS/AFRP OIDC Client"
+          if [ ! -f "$BIN" ]; then
+            echo "::error::找不到可执行文件 $BIN"
+            ls -la "build/macos/Build/Products/Release/" || true
+            exit 1
+          fi
+          ARCHS=$(lipo -archs "$BIN")
+          echo "archs: $ARCHS"
+          case "$ARCHS" in
+            *arm64*) echo "✅ 确认是 arm64 构建" ;;
+            *) echo "::error::不是 arm64 构建（runner 可能落到 Intel 镜像）: $ARCHS"; exit 1 ;;
+          esac
+
+      - name: Package & Upload
+        run: |
+          set -e
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          mkdir -p dist
+          cd build/macos/Build/Products/Release
+          ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_arm64.zip"
+          cd ../../../../
+          ls -la dist/
+          gh release upload "v$VER" dist/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-rebuild-fallback
+          path: dist/*
+          if-no-files-found: warn
+
+  publish:
+    needs: [build, build_fallback]
+    if: always() && (needs.build.result == 'success' || needs.build_fallback.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS arm64 asset from Release
+        run: |
+          set -e
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          mkdir -p dist
+          gh release download "v$VER" --pattern "afrp-oidc-client_${VER}_macos_arm64.zip" --dir dist --clobber
+          ls -la dist/
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload macOS arm64 to R2 (app/)
+        if: env.R2_ACCOUNT_ID != ''
+        continue-on-error: true
+        run: |
+          chmod +x .github/scripts/upload-r2.sh
+          for f in dist/*macos_arm64*; do
+            [ -f "$f" ] || continue
+            echo "=== 上传 $(basename "$f") 到 R2 (app/) ==="
+            bash .github/scripts/upload-r2.sh "$f" "app" || echo "::warning::R2 上传失败: $f"
+          done
+        env:
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+
+      - name: Update manifest (macos arm64 entry) and push
+        if: env.CI_API_SECRET != '' && env.CI_API_URL != ''
+        run: |
+          chmod +x .github/scripts/update-manifest-incremental.sh
+          rm -f /tmp/manifest-updated.json
+          for f in dist/*macos_arm64*; do
+            [ -f "$f" ] || continue
+            echo "=== 更新 manifest: $(basename "$f") (app) ==="
+            FILE="$f" SUBDIR="app" SITE_URL="${SITE_URL:-https://www.afrp.net}" \
+              bash .github/scripts/update-manifest-incremental.sh "$f" "app"
+          done
+          echo "📤 推送 manifest 到网站 API..."
+          RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "${CI_API_URL}/api/ci/update-manifest.php" \
+            -H "Authorization: Bearer ${CI_API_SECRET}" \
+            -F "manifest=@/tmp/manifest-updated.json")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | head -n-1)
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::Manifest 推送失败 (HTTP $HTTP_CODE): $BODY"
+            exit 1
+          fi
+          echo "✅ Manifest 推送成功: $BODY"
+        env:
+          CI_API_SECRET: ${{ secrets.CI_API_SECRET }}
+          CI_API_URL: ${{ secrets.CI_API_URL }}
+          SITE_URL: ${{ secrets.SITE_URL || 'https://www.afrp.net' }}
