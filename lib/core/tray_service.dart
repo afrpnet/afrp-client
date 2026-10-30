@@ -25,6 +25,7 @@ class TrayService with TrayListener, WindowListener {
 
   bool _inited = false;
   bool _quitting = false;
+  bool _trayReady = false;
   bool _closeToTray = true;
   bool _minimizeToTray = false;
   String _title = 'AFRP OIDC Client';
@@ -78,7 +79,8 @@ class TrayService with TrayListener, WindowListener {
           ? 'assets/brand/tray_icon.ico'
           : 'assets/brand/tray_icon.png';
       await trayManager.setIcon(icon, iconSize: 20);
-      await trayManager.setToolTip(_title);
+      // 菜单必须在图标之后立刻挂上：Linux 的 appindicator 插件没有实现
+      // setToolTip，放在它后面会被异常打断，导致托盘只剩图标、没有菜单。
       await trayManager.setContextMenu(
         Menu(
           items: [
@@ -88,7 +90,11 @@ class TrayService with TrayListener, WindowListener {
           ],
         ),
       );
+      if (!Platform.isLinux) {
+        await trayManager.setToolTip(_title);
+      }
       trayManager.addListener(this);
+      _trayReady = true;
     } catch (e) {
       debugPrint('托盘初始化失败（忽略）：$e');
     }
@@ -102,7 +108,9 @@ class TrayService with TrayListener, WindowListener {
     _title = title;
     try {
       await windowManager.setTitle(title);
-      await trayManager.setToolTip(title);
+      if (!Platform.isLinux) {
+        await trayManager.setToolTip(title);
+      }
     } catch (_) {
       // 窗口/托盘尚未就绪时静默忽略
     }
@@ -189,7 +197,8 @@ class TrayService with TrayListener, WindowListener {
     if (_quitting) {
       return;
     }
-    if (_closeToTray) {
+    // 托盘没建起来时隐藏窗口会让 App 彻底失联，直接退出
+    if (_closeToTray && _trayReady) {
       hideToTray();
     } else {
       quit();

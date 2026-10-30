@@ -77,6 +77,17 @@ class _SettingsPageState extends State<SettingsPage> {
                 ),
                 onPressed: _logout,
               ),
+              if (TrayService.supported) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.power_settings_new),
+                  label: const Text('退出程序'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: _quitApp,
+                ),
+              ],
             ],
           );
         },
@@ -387,7 +398,7 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 8),
             Text(
               '隐藏到系统托盘后 App 继续在后台运行，frpc 隧道保持连接；'
-              '从托盘菜单可恢复主界面或退出。',
+              '${Platform.isLinux ? '单击托盘图标弹出菜单，可恢复主界面或退出。' : '单击 / 双击托盘图标恢复主界面，右键菜单可退出。'}',
               style: theme.textTheme.bodySmall,
             ),
             SwitchListTile(
@@ -446,6 +457,19 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _quitApp() async {
+    final ok = await confirmDialog(
+      context,
+      '退出程序',
+      '退出后将停止 frpc，当前隧道会断开。确定退出吗？',
+      okText: '退出',
+      dangerous: true,
+    );
+    if (ok == true) {
+      await TrayService.instance.quit();
+    }
   }
 
   Future<void> _logout() async {
