@@ -16,6 +16,7 @@ jobs:
     outputs:
       version: ${{ steps.get-ver.outputs.version }}
       tag: ${{ steps.get-ver.outputs.tag }}
+      frpc_version: ${{ steps.frpc-ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - name: Verify version consistency
@@ -27,6 +28,14 @@ jobs:
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "tag=v$VER" >> "$GITHUB_OUTPUT"
+      - name: Resolve frpc core version
+        id: frpc-ver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FRPC_VER=$(bash tool/frpc-version.sh)
+          echo "version=$FRPC_VER" >> "$GITHUB_OUTPUT"
+          echo "::notice::本次构建内置 frpc 核心 $FRPC_VER"
       - name: Create release with notes
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
@@ -46,6 +55,8 @@ jobs:
     needs: create-release
     runs-on: windows-latest
     timeout-minutes: 90
+    env:
+      FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -59,7 +70,7 @@ jobs:
       - name: Download frpc (Windows)
         shell: bash
         run: |
-          FRPC_VERSION="0.71.0"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/windows
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_windows_amd64.zip" -o frpc.zip
           unzip -o -j frpc.zip "*/frpc.exe" -d assets/frpc/windows/
@@ -126,6 +137,8 @@ jobs:
     runs-on: windows-11-arm
     timeout-minutes: 90
     continue-on-error: true
+    env:
+      FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -139,7 +152,7 @@ jobs:
       - name: Download frpc (Windows arm64)
         shell: bash
         run: |
-          FRPC_VERSION="0.71.0"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/windows
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_windows_arm64.zip" -o frpc.zip
           unzip -o -j frpc.zip "*/frpc.exe" -d assets/frpc/windows/
@@ -203,6 +216,8 @@ jobs:
     timeout-minutes: 90
     # arm64 runner 偶发排队不到，不让单个平台拖垮整轮发版（缺产物时用 rebuild-macos-arm64.yml 补建）
     continue-on-error: true
+    env:
+      FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -214,7 +229,7 @@ jobs:
           channel: stable
       - name: Download frpc (macOS ARM64)
         run: |
-          FRPC_VERSION="0.71.0"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/macos
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_arm64.tar.gz" -o frpc_arm64.tar.gz
           mkdir -p /tmp/frpc_arm64 && tar -xzf frpc_arm64.tar.gz -C /tmp/frpc_arm64
@@ -248,6 +263,8 @@ jobs:
     # macos-latest 现指向 arm64，无法原生产出 Intel 版，故 Intel 版必须固定该标签。
     runs-on: macos-15-intel
     timeout-minutes: 90
+    env:
+      FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -259,7 +276,7 @@ jobs:
           channel: stable
       - name: Download frpc (macOS AMD64)
         run: |
-          FRPC_VERSION="0.71.0"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/macos
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_amd64.tar.gz" -o frpc_amd64.tar.gz
           mkdir -p /tmp/frpc_amd64 && tar -xzf frpc_amd64.tar.gz -C /tmp/frpc_amd64
@@ -282,6 +299,8 @@ jobs:
     needs: create-release
     runs-on: ubuntu-22.04
     timeout-minutes: 90
+    env:
+      FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -301,7 +320,7 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev
       - name: Download frpc (Linux amd64)
         run: |
-          FRPC_VERSION="0.71.0"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/linux
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_linux_amd64.tar.gz" -o frpc.tar.gz
           tar -xzf frpc.tar.gz
@@ -324,6 +343,8 @@ jobs:
     needs: create-release
     runs-on: ubuntu-22.04-arm
     timeout-minutes: 90
+    env:
+      FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -347,7 +368,7 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev
       - name: Download frpc (Linux arm64)
         run: |
-          FRPC_VERSION="0.71.0"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/linux
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_linux_arm64.tar.gz" -o frpc.tar.gz
           tar -xzf frpc.tar.gz
@@ -373,6 +394,8 @@ jobs:
     needs: create-release
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    env:
+      FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -400,7 +423,8 @@ jobs:
       - name: Bundle frpc as native libs (jniLibs)
         run: |
           set -e
-          FRPC_VER=0.71.0
+          FRPC_VER="${FRPC_VERSION}"
+          bash tool/pin-frpc-version.sh "${FRPC_VER}"
           declare -A ABI=( [arm64-v8a]=arm64 [armeabi-v7a]=arm [x86_64]=amd64 )
           for abi in "${!ABI[@]}"; do
             arch="${ABI[$abi]}"

@@ -27,7 +27,8 @@ jobs:
       - name: Download frpc (macOS ARM64)
         run: |
           set -e
-          FRPC_VERSION="0.71.0"
+          FRPC_VERSION="$(bash tool/frpc-version.sh)"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/macos
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_arm64.tar.gz" -o frpc_arm64.tar.gz
           mkdir -p /tmp/frpc_arm64 && tar -xzf frpc_arm64.tar.gz -C /tmp/frpc_arm64
@@ -92,7 +93,8 @@ jobs:
       - name: Download frpc (macOS ARM64)
         run: |
           set -e
-          FRPC_VERSION="0.71.0"
+          FRPC_VERSION="$(bash tool/frpc-version.sh)"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/macos
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_arm64.tar.gz" -o frpc_arm64.tar.gz
           mkdir -p /tmp/frpc_arm64 && tar -xzf frpc_arm64.tar.gz -C /tmp/frpc_arm64

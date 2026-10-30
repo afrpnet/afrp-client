@@ -15,7 +15,7 @@ import 'oidc_proxy.dart';
 /// frpc 进程管理：运行前从 App 资源释放二进制到可写目录，
 /// 启动/停止进程，并把 stdout/stderr 作为日志行提供给 UI。
 class FrpcManager extends ChangeNotifier {
-  static const String frpcVersion = '0.71.0';
+  static const String frpcVersion = '0.71.1';
   static const int _maxLogLines = 800;
   static const MethodChannel _installerChannel = MethodChannel(
     'afrp_oidc/installer',
@@ -124,8 +124,9 @@ class FrpcManager extends ChangeNotifier {
     );
     if (assetKey.endsWith('.tar.gz')) {
       final tar = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
+      // CI 重新打包时成员名可能是 frpc（无目录前缀），本地/官方包则是 <dir>/frpc
       final entry = tar.files.firstWhere(
-        (f) => f.isFile && f.name.endsWith('/frpc'),
+        (f) => f.isFile && (f.name == 'frpc' || f.name.endsWith('/frpc')),
         orElse: () => throw StateError('压缩包中未找到 frpc'),
       );
       bin.writeAsBytesSync(entry.content as List<int>, flush: true);

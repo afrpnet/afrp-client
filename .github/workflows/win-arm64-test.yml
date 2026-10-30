@@ -32,7 +32,8 @@ jobs:
       - name: Download frpc (Windows arm64)
         shell: bash
         run: |
-          FRPC_VERSION="0.71.0"
+          FRPC_VERSION="$(bash tool/frpc-version.sh)"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/windows
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_windows_arm64.zip" -o frpc.zip
           unzip -o -j frpc.zip "*/frpc.exe" -d assets/frpc/windows/
