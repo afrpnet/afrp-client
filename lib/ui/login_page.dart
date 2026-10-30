@@ -60,14 +60,25 @@ class _LoginPageState extends State<LoginPage> {
       _busy = true;
       _error = null;
     });
-    final err = await appState.login(identity, password);
-    if (!mounted) {
-      return;
+    try {
+      final err = await appState.login(identity, password);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _busy = false;
+        _error = err;
+      });
+    } catch (e) {
+      // 任何未预料的异常都必须让按钮恢复可点，否则界面会一直停在「登录中…」
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _busy = false;
+        _error = '登录异常：$e';
+      });
     }
-    setState(() {
-      _busy = false;
-      _error = err;
-    });
   }
 
   @override

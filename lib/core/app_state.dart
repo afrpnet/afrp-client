@@ -34,7 +34,8 @@ class AppState extends ChangeNotifier {
   /// 服务器地址（由 config.oidcIssuer 自动设定，默认生产站）
   String baseUrl = defaultBaseUrl;
 
-  late ApiClient api;
+  /// 启动阶段可能因本地存储异常而中断，因此先用默认站点初始化，避免 api 未赋值
+  ApiClient api = ApiClient(baseUrl: defaultBaseUrl);
 
   PublicConfig? config;
   UserInfo? user;
@@ -206,6 +207,9 @@ class AppState extends ChangeNotifier {
       return null;
     } on ApiException catch (e) {
       return e.message;
+    } catch (e) {
+      debugPrint('Login failed: $e');
+      return '登录异常：$e';
     }
   }
 
