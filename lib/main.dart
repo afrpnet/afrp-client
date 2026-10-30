@@ -26,9 +26,18 @@ Color _seedColor(String hex) {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  debugPrint('[boot] main started');
   if (TrayService.supported) {
-    await TrayService.instance.init();
+    // 托盘/窗口管理器初始化失败或卡住都不能阻塞 runApp，
+    // 否则桌面上只剩一个没有任何内容的空白原生窗口。
+    try {
+      await TrayService.instance.init().timeout(const Duration(seconds: 8));
+      debugPrint('[boot] tray ready');
+    } catch (e) {
+      debugPrint('[boot] tray init failed (ignored): $e');
+    }
   }
+  debugPrint('[boot] runApp');
   runApp(const FrpApp());
 }
 
