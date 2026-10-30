@@ -2,6 +2,15 @@
 
 基于 [frp](https://github.com/fatedier/frp) 的多端内网穿透客户端，内置 OIDC 认证，支持 Windows / macOS / Linux / Android / HarmonyOS / OpenWrt。
 
+## 功能
+
+- 登录账号、查看会员状态、购买套餐
+- 选择服务器、配置隧道（TCP / UDP / HTTP / HTTPS / STCP / SUDP / XTCP）
+- 一键连接，内置 frpc 核心自动释放
+- OIDC 密钥管理（粘贴已有 / 一键生成 / 清除）
+- 站内消息提醒
+- 多平台统一界面
+
 ## 客户端测试情况
 
 | 平台 | 测试情况 | 仓库 |
@@ -15,15 +24,6 @@
 | HarmonyOS / OpenHarmony | ❎ 未测试 | [afrpnet/afrp-client](https://github.com/afrpnet/afrp-client)（本仓库） |
 
 > ✅ 表示已在真实设备 / 环境中完成连接测试；❎ 表示已提供构建产物但尚未验证，欢迎反馈问题。
-
-## 功能
-
-- 登录账号、查看会员状态、购买套餐
-- 选择服务器、配置隧道（TCP / UDP / HTTP / HTTPS / STCP / SUDP / XTCP）
-- 一键连接，内置 frpc 核心自动释放
-- OIDC 密钥管理（粘贴已有 / 一键生成 / 清除）
-- 站内消息提醒
-- 多平台统一界面
 
 ## 安装
 
