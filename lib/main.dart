@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'core/app_state.dart';
 import 'core/tray_service.dart';
@@ -24,20 +26,38 @@ Color _seedColor(String hex) {
   return Color(0xFF000000 | int.parse(m.group(1)!, radix: 16));
 }
 
+/// 启动阶段日志：同时写 stderr 和磁盘，便于在没有界面的机器上排查白屏。
+Future<void> _bootLog(String msg) async {
+  debugPrint('[boot] $msg');
+  try {
+    await Future(() async {
+      final dir = await getApplicationSupportDirectory();
+      final f = File('${dir.path}${Platform.pathSeparator}startup.log');
+      await f.writeAsString(
+        '${DateTime.now().toIso8601String()} $msg\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    }).timeout(const Duration(seconds: 3));
+  } catch (_) {
+    // 日志失败不影响启动
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  debugPrint('[boot] main started');
+  await _bootLog('main started (${Platform.operatingSystem})');
   if (TrayService.supported) {
     // 托盘/窗口管理器初始化失败或卡住都不能阻塞 runApp，
     // 否则桌面上只剩一个没有任何内容的空白原生窗口。
     try {
       await TrayService.instance.init().timeout(const Duration(seconds: 8));
-      debugPrint('[boot] tray ready');
+      await _bootLog('tray ready');
     } catch (e) {
-      debugPrint('[boot] tray init failed (ignored): $e');
+      await _bootLog('tray init failed (ignored): $e');
     }
   }
-  debugPrint('[boot] runApp');
+  await _bootLog('runApp');
   runApp(const FrpApp());
 }
 
@@ -56,6 +76,7 @@ class _FrpAppState extends State<FrpApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootLog('first frame'));
     appState.init().then((_) async {
       await appState.ensureBootAutostartDefault();
       await frpcManager.refreshInstalledVersion();
@@ -63,8 +84,10 @@ class _FrpAppState extends State<FrpApp> {
       if (appState.autoConnectOnLaunch) {
         await autoConnectFrpc();
       }
+      await _bootLog('app init done');
       await _silentAppUpdateCheck();
     }).catchError((e, stack) {
+      _bootLog('app init failed: $e');
       debugPrint('App init failed: $e\n$stack');
       // 即使初始化失败也要标记为已启动，让用户看到登录页而不是无限转圈
       appState.booted = true;
