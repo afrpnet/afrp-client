@@ -234,6 +234,10 @@ jobs:
           curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_arm64.tar.gz" -o frpc_arm64.tar.gz
           mkdir -p /tmp/frpc_arm64 && tar -xzf frpc_arm64.tar.gz -C /tmp/frpc_arm64
           tar -czf assets/frpc/macos/frpc_darwin_arm64.tar.gz -C /tmp/frpc_arm64/frp_${FRPC_VERSION}_darwin_arm64 frpc
+          # App 在 macOS 固定读取 amd64 包（arm64 机器经 Rosetta 运行），必须一并刷新
+          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_amd64.tar.gz" -o frpc_amd64.tar.gz
+          mkdir -p /tmp/frpc_mac_amd64 && tar -xzf frpc_amd64.tar.gz -C /tmp/frpc_mac_amd64
+          tar -czf assets/frpc/macos/frpc_darwin_amd64.tar.gz -C /tmp/frpc_mac_amd64/frp_${FRPC_VERSION}_darwin_amd64 frpc
       - name: Build macOS
         run: flutter build macos --release
       - name: Verify architecture (must be arm64)
