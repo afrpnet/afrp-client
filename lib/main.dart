@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'core/app_state.dart';
+import 'core/linux_desktop.dart';
 import 'core/tray_service.dart';
 import 'core/updater.dart';
 import 'frpc/auto_connect.dart';
@@ -57,6 +58,7 @@ Future<void> main() async {
       await _bootLog('tray init failed (ignored): $e');
     }
   }
+  await registerLinuxDesktopEntry();
   await _bootLog('runApp');
   runApp(const FrpApp());
 }

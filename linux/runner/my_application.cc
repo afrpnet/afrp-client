@@ -19,9 +19,31 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+// Linux 的 ELF 可执行文件不能内嵌图标，窗口/任务栏图标需要在运行时从
+// bundle 里的品牌图片加载（X11 直接生效；Wayland 由 .desktop 决定）。
+static void set_default_window_icon() {
+  g_autofree gchar* exe = g_file_read_link("/proc/self/exe", nullptr);
+  if (exe == nullptr) {
+    return;
+  }
+  g_autofree gchar* dir = g_path_get_dirname(exe);
+  g_autofree gchar* path =
+      g_build_filename(dir, "data", "flutter_assets", "assets", "brand",
+                       "app_icon.png", nullptr);
+  if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
+    return;
+  }
+  GError* error = nullptr;
+  if (!gtk_window_set_default_icon_from_file(path, &error)) {
+    g_warning("Failed to set window icon: %s", error->message);
+    g_clear_error(&error);
+  }
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
+  set_default_window_icon();
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 
