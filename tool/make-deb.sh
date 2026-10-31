@@ -127,6 +127,8 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
 				rm -f "$f"
 			fi
 		done
+		# 应用运行时写入的开机自启条目
+		rm -f "$home/.config/autostart/net.afrp.frp_oidc_app.desktop"
 	done
 fi
 

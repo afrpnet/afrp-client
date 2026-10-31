@@ -56,6 +56,8 @@
 sudo apt remove afrp-oidc-client
 ```
 
+- **开机自启动**：设置页可开关；Linux 通过 `~/.config/autostart/net.afrp.frp_oidc_app.desktop` 实现（首次运行默认开启）
+
 需要 GTK3 环境：
 ```bash
 # Debian/Ubuntu
