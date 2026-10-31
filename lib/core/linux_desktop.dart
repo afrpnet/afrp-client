@@ -12,6 +12,11 @@ Future<void> registerLinuxDesktopEntry() async {
     return;
   }
   try {
+    // deb 安装版由系统提供 .desktop 与图标，不再写用户目录，避免重复条目
+    final exe = Platform.resolvedExecutable;
+    if (exe.startsWith('/usr/') || exe.startsWith('/opt/')) {
+      return;
+    }
     final home = Platform.environment['HOME'];
     if (home == null || home.isEmpty) {
       return;

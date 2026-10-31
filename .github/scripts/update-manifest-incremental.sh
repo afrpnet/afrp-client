@@ -54,6 +54,12 @@ case "$FILENAME" in
     elif [[ "$FILENAME" == *macos*amd64.zip ]]; then
       PLATFORM="macos"; CHANNEL="portable"; ARCH="amd64"
       NOTES="macOS x64 免安装版"
+    elif [[ "$FILENAME" == *linux*amd64*.deb ]]; then
+      PLATFORM="linux"; CHANNEL="deb"; ARCH="amd64"
+      NOTES="Linux x86_64 DEB 安装包（Debian/Ubuntu）"
+    elif [[ "$FILENAME" == *linux*arm64*.deb ]]; then
+      PLATFORM="linux"; CHANNEL="deb"; ARCH="arm64"
+      NOTES="Linux ARM64 DEB 安装包（Debian/Ubuntu）"
     elif [[ "$FILENAME" == *linux*amd64*.tar.gz ]]; then
       PLATFORM="linux"; CHANNEL="portable"; ARCH="amd64"
       NOTES="Linux x86_64 免安装版"

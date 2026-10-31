@@ -43,7 +43,10 @@
 
 ### Linux
 
-下载 `afrp-oidc-client_<版本>_linux_<架构>.tar.gz`，解压后运行 `afrp_oidc`。
+二选一：
+
+- **DEB 安装包**（Debian/Ubuntu）：下载 `afrp-oidc-client_<版本>_linux_<架构>.deb`，执行 `sudo apt install ./afrp-oidc-client_<版本>_linux_<架构>.deb`，装好后从应用菜单启动。
+- **免安装版**：下载 `afrp-oidc-client_<版本>_linux_<架构>.tar.gz`，解压后运行 `afrp_oidc`（首次启动会把带图标的启动器注册到应用菜单）。
 
 需要 GTK3 环境：
 ```bash
