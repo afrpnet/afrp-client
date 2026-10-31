@@ -1,12 +1,12 @@
 Package: luci-app-afrp
-Version: 1.3.29
+Version: 1.3.30
 Depends: luci-base, uclient-fetch, ca-bundle, frpc
 License: MIT
 Section: luci
 Architecture: all
 Installed-Size: 60
-Filename: luci-app-afrp_1.3.29_all.ipk
-Size: 20298
-SHA256sum: 26d6c9e4182e0c87689f23bb9330fc48920adf01040b1dc0548c3a1e6e1713df
+Filename: luci-app-afrp_1.3.30_all.ipk
+Size: 20313
+SHA256sum: 3212a8afa4038a6b0f97443d315c316c49141c742483acc98841226481bf9d4f
 Description: AFRP frpc tunnel management by afrp.net
 
