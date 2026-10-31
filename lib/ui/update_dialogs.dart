@@ -141,7 +141,7 @@ Future<bool> _confirmElevatedInstall(BuildContext context, String message) async
   return r == true;
 }
 
-/// frpc 核心更新确认 + 执行
+/// frpc 二进制程序更新确认 + 执行
 Future<void> frpcUpdateFlow(
   BuildContext context, {
   required FrpcUpdateCheck check,
@@ -151,7 +151,7 @@ Future<void> frpcUpdateFlow(
   final go = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: Text('更新 frpc 核心到 ${e.version}'),
+      title: Text('更新 frpc 二进制程序到 ${e.version}'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -164,7 +164,7 @@ Future<void> frpcUpdateFlow(
             ],
             const SizedBox(height: 10),
             Text(
-              running ? '更新会先断开当前隧道连接，需重新连接。' : '更新后使用新的 frpc 核心进行连接。',
+              running ? '更新会先断开当前隧道连接，需重新连接。' : '更新后使用新的 frpc 二进制程序进行连接。',
               style: Theme.of(ctx).textTheme.bodySmall,
             ),
           ],

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 解析构建要内置的 frpc 核心版本：优先 fatedier/frp 最新 release，失败时回退固定版本。
+# 解析构建要内置的 frpc 二进制程序版本：优先 fatedier/frp 最新 release，失败时回退固定版本。
 # 用法：bash tool/frpc-version.sh [--pin]
 #   --pin   只输出 tool/frpc-version.txt 中的固定版本
 # 环境变量：FRPC_VERSION 显式指定版本（最高优先级）；GH_TOKEN 提高 GitHub API 限额。

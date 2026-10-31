@@ -1,7 +1,7 @@
 # luci-app-afrp — AFRP OIDC frpc 客户端（OpenWrt LuCI 插件）
 
 在 OpenWrt 路由器上以 LuCI 网页插件的形式运行 frpc：隧道配置可视化，OIDC 认证参数自动
-填充，frpc 核心可在线更新。与网站（afrp.net）和桌面/移动 App 共用同一套账号体系。
+填充，frpc 二进制程序可在线更新。与网站（afrp.net）和桌面/移动 App 共用同一套账号体系。
 
 ## 目录结构
 
@@ -11,7 +11,7 @@ luci-app-afrp/                 LuCI 插件源码（含 SDK Makefile）
   root/etc/config/afrp         UCI 配置模板（升级不覆盖）
   root/etc/init.d/afrp         procd 服务脚本（reload = stop + start）
   root/usr/libexec/afrp/render           由 UCI 生成 /var/etc/afrp.toml
-  root/usr/libexec/afrp/update-core      frpc 核心检测/检查/安装（ucode）
+  root/usr/libexec/afrp/update-core      frpc 二进制程序检测/检查/安装（ucode）
   root/usr/libexec/afrp/import-account   从官网导入账号与服务器（ucode）
   root/usr/share/luci/menu.d/            LuCI 菜单与 ACL
   root/usr/share/rpcd/acl.d/
@@ -40,7 +40,7 @@ opkg install /tmp/afrp.ipk
 
 > 若提示签名相关错误：`opkg install --force-signature /tmp/afrp.ipk`。
 > 
-> **注意**：v1.1.5+ 版本依赖 `frpc` 包，如果官方源有则自动安装；如果没有，插件会在首次使用时从 R2 自动下载 frpc 核心。
+> **注意**：v1.1.5+ 版本依赖 `frpc` 包，如果官方源有则自动安装；如果没有，插件会在首次使用时从 R2 自动下载 frpc 二进制程序。
 
 ### 1b. apk 安装 .apk（OpenWrt 25.12+）
 
@@ -102,9 +102,9 @@ cd .. && make defconfig && make package/luci-app-afrp/compile V=s
 5. 切换到「隧道管理」添加隧道（类型、本地端口、子域名等），保存并应用
 6. 回到「基础设置」勾选「启用」，或直接在「运行状态」页点「启动服务」
 
-### frpc 核心更新
+### frpc 二进制程序更新
 
-「运行状态 → 核心更新」会自动检测路由器架构（读 /etc/openwrt_release，回退 uname -m），
+「运行状态 → 二进制程序更新」会自动检测路由器架构（读 /etc/openwrt_release，回退 uname -m），
 从网站 manifest.json 获取最新版本信息（网站不可用时自动切换到 GitHub Atom feed），
 匹配 `frpc / linux / 最新` 条目，核对 sha256 后安装到 `/usr/bin/frpc`。
 
@@ -133,7 +133,7 @@ frp 官方发布名与清单 arch 字段对照（清单由我们维护，会做�
 | frp_*_linux_mips64 / mips64le | mips64 / mips64le | 高性能 MIPS |
 | frp_*_linux_riscv64 | riscv64 | RISC-V 开发板 |
 
-自动检测不准时，可在「基础设置 → 核心架构」手动指定。
+自动检测不准时，可在「基础设置 → 架构」手动指定。
 
 ## 排障
 

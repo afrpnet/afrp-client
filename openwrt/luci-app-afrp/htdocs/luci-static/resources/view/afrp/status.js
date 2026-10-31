@@ -96,7 +96,7 @@ return view.extend({
 		function renderStatus() {
 			var parts = [];
 			parts.push(state.running ? _('运行中') : _('未运行'));
-			parts.push(state.installed ? ('frpc v' + state.version) : _('未安装核心'));
+			parts.push(state.installed ? ('frpc v' + state.version) : _('未安装二进制程序'));
 			if (state.arch)
 				parts.push(_('架构') + ' ' + state.arch);
 			svcInfo.textContent = parts.join(' · ');
@@ -142,9 +142,9 @@ return view.extend({
 			E('div', {}, [ btnStart, ' ', btnStop, ' ', btnRestart, ' ', btnRefreshSvc ])
 		]);
 
-		/* ---------------- 卡片 2：frpc 核心更新 ---------------- */
+		/* ---------------- 卡片 2：frpc 二进制程序更新 ---------------- */
 
-		var coreInfo = E('div', {}, [ _('点击「检查更新」获取可用核心。') ]);
+		var coreInfo = E('div', {}, [ _('点击「检查更新」获取可用二进制程序。') ]);
 		var coreDetail = E('div', { class: 'cbi-map-descr' }, '');
 		var btnCheck = E('button', { class: 'cbi-button cbi-button-action' }, [ _('检查更新') ]);
 		var installBtn = null;
@@ -173,7 +173,7 @@ return view.extend({
 
 				var best = pickBest(d.candidates || [], d.arch);
 				if (!best) {
-					coreInfo.textContent = _('未找到适用于当前架构（' + (d.arch || '未知') + '）的核心条目。');
+					coreInfo.textContent = _('未找到适用于当前架构（' + (d.arch || '未知') + '）的二进制程序条目。');
 					coreDetail.textContent = _('可稍后再试，或到官网下载页手动获取。');
 					return;
 				}
@@ -188,7 +188,7 @@ return view.extend({
 					notes += '\n' + _('检测来源') + '：' + srcText;
 
 				if (!d.current_version) {
-					coreInfo.textContent = head + _('。本机尚未安装 frpc 核心。');
+					coreInfo.textContent = head + _('。本机尚未安装 frpc 二进制程序。');
 				}
 				else if (cmpVer(best.version, d.current_version) > 0) {
 					coreInfo.textContent = head + '，' + _('当前 v' + d.current_version + '，可更新。');
@@ -218,7 +218,7 @@ return view.extend({
 		}
 
 		function doInstallCore(entry, btn) {
-			if (!window.confirm(_('将下载并替换 frpc 核心（先校验 SHA-256），随后需要重启服务才能生效。继续？')))
+			if (!window.confirm(_('将下载并替换 frpc 二进制程序（先校验 SHA-256），随后需要重启服务才能生效。继续？')))
 				return;
 			btn.disabled = true;
 			coreInfo.textContent = _('正在下载并校验…文件较大时可能需要数十秒，请勿关闭页面。');
@@ -230,7 +230,7 @@ return view.extend({
 				try { d = JSON.parse((res.stdout || '').trim()); } catch (e) { d = null; }
 				if (d == null || d.ok != true)
 					throw new Error(d && d.error ? d.error : (_('安装失败') + '（exit ' + res.code + '）'));
-				coreInfo.textContent = _('安装成功：frpc v' + d.version + '。请点击上方「重启」使新核心生效。');
+				coreInfo.textContent = _('安装成功：frpc v' + d.version + '。请点击上方「重启」使新二进制程序生效。');
 			}).catch(function(err) {
 				coreInfo.textContent = _('安装失败：') + err.message;
 			}).then(function() {
@@ -242,7 +242,7 @@ return view.extend({
 		btnCheck.addEventListener('click', function() { doCheckCore(); });
 
 		var cardCore = E('div', { class: 'cbi-section' }, [
-			E('h3', {}, [ _('frpc 核心更新') ]),
+			E('h3', {}, [ _('frpc 二进制程序更新') ]),
 			coreInfo,
 			coreDetail,
 			E('div', {}, [ btnCheck ])

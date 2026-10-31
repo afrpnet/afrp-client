@@ -269,14 +269,14 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: 8),
             Text(
-              '从服务器检查 frpc 核心与 App 的新版本，按提示下载安装。',
+              '从服务器检查 frpc 二进制程序与 App 的新版本，按提示下载安装。',
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 10),
             ListenableBuilder(
               listenable: frpcManager,
               builder: (context, _) => _updateRow(
-                title: 'frpc 核心',
+                title: 'frpc 二进制程序',
                 version: frpcManager.installedVersion,
                 checking: _checkingFrpc,
                 onPressed: _checkingFrpc ? null : _checkFrpc,

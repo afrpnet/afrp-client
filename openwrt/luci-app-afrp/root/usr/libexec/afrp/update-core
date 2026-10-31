@@ -1,5 +1,5 @@
 #!/usr/bin/ucode
-// AFRP frpc 核心更新工具（由 LuCI「运行状态」页调用）
+// AFRP frpc 二进制程序更新工具（由 LuCI「运行状态」页调用）
 // 用法：
 //   update-core status
 //   update-core check <base_url> <arch>   // base_url 已废弃，保留兼容
@@ -456,7 +456,7 @@ function cmdInstall(url, sha256) {
 
 	// 先放到目标分区并验证可运行（架构不符时 exec 会失败），再原子替换
 	if (!okCmd('cp -f ' + qs + ' /usr/bin/frpc.new')) {
-		fail('写入新核心失败（磁盘空间不足？）');
+		fail('写入新二进制程序失败（磁盘空间不足？）');
 	}
 	if (!okCmd('chmod 755 /usr/bin/frpc.new')) {
 		fail('设置执行权限失败');
@@ -464,13 +464,13 @@ function cmdInstall(url, sha256) {
 	let probe = run('/usr/bin/frpc.new -v 2>&1');
 	if (match(probe, regexp('([0-9]+[.][0-9]+[.][0-9]+)')) == null) {
 		okCmd('rm -f /usr/bin/frpc.new');
-		fail('新核心无法运行（通常是架构不匹配），请确认设备架构后重试');
+		fail('新二进制程序无法运行（通常是架构不匹配），请确认设备架构后重试');
 	}
 
 	let hadOld = okCmd('test -e /usr/bin/frpc');
 	if (hadOld && !okCmd('cp -f /usr/bin/frpc /usr/bin/frpc.bak')) {
 		okCmd('rm -f /usr/bin/frpc.new');
-		fail('备份原核心失败');
+		fail('备份原二进制程序失败');
 	}
 	if (!okCmd('mv -f /usr/bin/frpc.new /usr/bin/frpc')) {
 		fail('替换 frpc 失败');
@@ -483,7 +483,7 @@ function cmdInstall(url, sha256) {
 			fail('替换后校验失败，已回滚旧版本');
 		}
 		okCmd('rm -f /usr/bin/frpc');
-		fail('替换后校验失败，已移除新核心');
+		fail('替换后校验失败，已移除新二进制程序');
 	}
 	okCmd('rm -f /usr/bin/frpc.bak');
 	okCmd('rm -rf /tmp/afrp');

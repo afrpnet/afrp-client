@@ -101,7 +101,7 @@ class FrpcManager extends ChangeNotifier {
       return path;
     }
 
-    // 二进制与版本标记同时存在即信任；可能已被「frpc 核心更新」替换过，勿用内置版覆盖
+    // 二进制与版本标记同时存在即信任；可能已被「frpc 二进制程序更新」替换过，勿用内置版覆盖
     if (bin.existsSync() && marker.existsSync()) {
       _installedVersion = marker.readAsStringSync().trim();
       _binPath = bin.path;

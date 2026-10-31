@@ -64,7 +64,7 @@ case "${1:-install}" in
         say ""
         say "安装完成。"
         if [ ! -x /usr/bin/frpc ]; then
-            say "提示: 未检测到 /usr/bin/frpc，请打开 LuCI「服务 → AFRP frpc → 运行状态」在线安装 frpc 核心。"
+            say "提示: 未检测到 /usr/bin/frpc，请打开 LuCI「服务 → AFRP frpc → 运行状态」在线安装 frpc 二进制程序。"
         fi
         say "入口: LuCI 菜单「服务 → AFRP frpc」（基础设置 / 隧道管理 / 运行状态）。"
         ;;

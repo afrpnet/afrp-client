@@ -15,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.29';
+const String kAppVersion = '1.3.30';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -186,7 +186,7 @@ List<String> kGitHubSources = [
   'https://ghproxy.net/https://github.com/',
 ];
 
-/// App 自更新仓库 / frpc 内核仓库（后台可下发覆盖）
+/// App 自更新仓库 / frpc 二进制程序仓库（后台可下发覆盖）
 String kGhRepo = 'afrpnet/afrp-client';
 String kFrpcRepo = 'fatedier/frp';
 
@@ -537,7 +537,7 @@ String _sourceFileName(String url, String fallback) {
 
 /// 清理更新临时目录里的陈旧文件
 ///
-/// 每次更新下载的安装包/内核都会留在临时目录里，攒多了既占空间，
+/// 每次更新下载的安装包/二进制程序都会留在临时目录里，攒多了既占空间，
 /// 未签名的旧安装包长时间躺在 Temp 下也容易被安全软件当成可疑文件处理。
 /// 只删超过 [maxAge] 的文件，正在用的（刚下载的）不会被动到。
 Future<void> cleanupUpdateTempDir({
@@ -746,7 +746,7 @@ Future<File> extractExecutable(
 }
 
 // ---------------------------------------------------------------------------
-// frpc 核心更新
+// frpc 二进制程序更新
 // ---------------------------------------------------------------------------
 
 class FrpcUpdateCheck {
