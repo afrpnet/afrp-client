@@ -35,7 +35,7 @@ jobs:
         run: |
           FRPC_VER=$(bash tool/frpc-version.sh)
           echo "version=$FRPC_VER" >> "$GITHUB_OUTPUT"
-          echo "::notice::本次构建内置 frpc 核心 $FRPC_VER"
+          echo "::notice::本次构建内置 frpc 二进制程序 $FRPC_VER"
       - name: Create release with notes
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
