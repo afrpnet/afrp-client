@@ -79,9 +79,10 @@ jobs:
           if-no-files-found: warn
 
   # 主标签拿不到 arm64 runner 时换一个镜像版本再试一次（macos-14 与 macos-15 都是 Apple Silicon）
+  # 注意：排队超时被 GitHub 取消时结论是 cancelled 而不是 failure，必须用 != 'success' 才能兜住
   build_fallback:
     needs: build
-    if: failure()
+    if: always() && needs.build.result != 'success'
     runs-on: macos-14
     timeout-minutes: 90
     steps:
