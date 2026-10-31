@@ -45,8 +45,16 @@
 
 二选一：
 
-- **DEB 安装包**（Debian/Ubuntu）：下载 `afrp-oidc-client_<版本>_linux_<架构>.deb`，执行 `sudo apt install ./afrp-oidc-client_<版本>_linux_<架构>.deb`，装好后从应用菜单启动。
-- **免安装版**：下载 `afrp-oidc-client_<版本>_linux_<架构>.tar.gz`，解压后运行 `afrp_oidc`（首次启动会把带图标的启动器注册到应用菜单）。
+- **DEB 安装包**（Debian/Ubuntu）：下载 `afrp-oidc-client_<版本>_linux_<架构>.deb`，执行 `sudo apt install ./afrp-oidc-client_<版本>_linux_<架构>.deb`。
+  - 程序装在 `/opt/afrp-oidc-client/`，命令 `afrp_oidc`，系统菜单项 `/usr/share/applications/net.afrp.frp_oidc_app.desktop`
+  - 安装时会自动在桌面放一个启动图标（XFCE/GNOME/KDE 等通用）；若没有，从「应用程序 → 网络 → AFRP OIDC 客户端」打开，右键可「添加到桌面/面板」
+  - 菜单没刷新时执行 `xfce4-panel -r`（XFCE）或重新登录
+- **免安装版**：下载 `afrp-oidc-client_<版本>_linux_<架构>.tar.gz`，解压后运行 `afrp_oidc`（首次启动会把带图标的启动器和桌面图标注册到用户目录）。
+
+卸载会一并清理桌面图标：
+```bash
+sudo apt remove afrp-oidc-client
+```
 
 需要 GTK3 环境：
 ```bash

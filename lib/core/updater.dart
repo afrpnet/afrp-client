@@ -15,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.27';
+const String kAppVersion = '1.3.28';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
