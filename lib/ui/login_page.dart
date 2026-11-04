@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../core/app_state.dart';
 import '../core/models.dart';
+import '../frpc/auto_connect.dart';
 
 /// 登录页：账号密码登录；服务器地址默认使用后台配置（OIDC Issuer 所属站点）
 class LoginPage extends StatefulWidget {
@@ -69,6 +70,11 @@ class _LoginPageState extends State<LoginPage> {
         _busy = false;
         _error = err;
       });
+      // 登录成功后与开机自启走同一套自动连接逻辑：已存有 Client Secret 且
+      // 开启了「启动时自动连接」就静默拉起 frpc，避免用户登录完还要手动点连接。
+      if (err == null && appState.autoConnectOnLaunch) {
+        await autoConnectFrpc();
+      }
     } catch (e) {
       // 任何未预料的异常都必须让按钮恢复可点，否则界面会一直停在「登录中…」
       if (!mounted) {

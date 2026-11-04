@@ -368,9 +368,16 @@ class FrpcManager extends ChangeNotifier {
     _setStatus('未连接');
   }
 
+  // frpc 日志带 ANSI 颜色转义码，运行日志是纯文本展示，不剥掉就会出现 [0m 这类乱码
+  static final _ansiRe = RegExp(r'\x1B\[[0-9;]*[A-Za-z]|\x1B\][^\x07]*(\x07|\x1B\\)');
+
   void _onLine(String line) {
-    _addLog(line);
-    final l = line.toLowerCase();
+    final clean = _ansiRe.replaceAll(line, '').trim();
+    if (clean.isEmpty) {
+      return;
+    }
+    _addLog(clean);
+    final l = clean.toLowerCase();
     if (l.contains('login to server success')) {
       _connectOk = true;
       _setStatus('已连接');
