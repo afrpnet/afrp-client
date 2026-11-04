@@ -3,7 +3,8 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
+// archive 4.6+ 也导出了 Sha256，与本仓库 lib/core/sha256.dart 撞名，必须 hide 掉
+import 'package:archive/archive.dart' hide Sha256;
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
