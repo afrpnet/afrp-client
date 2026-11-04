@@ -19,7 +19,7 @@
 | Android | ✅ 已测试 | [afrpnet/afrp-client](https://github.com/afrpnet/afrp-client)（本仓库） |
 | OpenWrt | ✅ 已测试 | [afrpnet/afrp-client](https://github.com/afrpnet/afrp-client)（本仓库 `openwrt/` 目录，LuCI 插件 ipk / apk） |
 | Docker | ✅ 已测试 | [afrpnet/afrp-docker](https://github.com/afrpnet/afrp-docker)（Docker Hub `afrp/afrp`） |
-| macOS | ❎ 未测试 | [afrpnet/afrp-client](https://github.com/afrpnet/afrp-client)（本仓库） |
+| macOS | ✅ 已测试 | [afrpnet/afrp-client](https://github.com/afrpnet/afrp-client)（本仓库） |
 | Linux | ✅ 已测试 | [afrpnet/afrp-client](https://github.com/afrpnet/afrp-client)（本仓库） |
 | HarmonyOS / OpenHarmony | ❎ 未测试 | [afrpnet/afrp-client](https://github.com/afrpnet/afrp-client)（本仓库） |
 
