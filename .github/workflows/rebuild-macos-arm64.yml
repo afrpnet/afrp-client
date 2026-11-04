@@ -1,8 +1,8 @@
-name: Rebuild macOS arm64 (dispatch)
+name: Rebuild macOS (dispatch)
 
-# 单独重建 macOS Apple Silicon 免安装版并覆盖发布（不动其它平台）。
-# 用途：发版时 macos-latest 的 arm64 runner 排队不到，导致该平台产物缺失时补建。
-# 从当前分支 HEAD 构建；release / R2 / manifest 只更新 macos arm64 条目。
+# 单独重建 macOS 产物（arm64 + amd64）并覆盖发布（不动其它平台）。
+# 用途：发版时 macOS runner 排队不到，导致该平台产物缺失时补建。
+# 从当前分支 HEAD 构建；release / R2 / manifest 只更新 macos 条目。
 on:
   workflow_dispatch:
 
@@ -155,30 +155,98 @@ jobs:
           path: dist/*
           if-no-files-found: warn
 
+  # Intel 版必须固定 macos-15-intel（GitHub 托管的最后一个 x86_64 macOS 镜像，支持到 2027-08）
+  build_amd64:
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify version consistency
+        run: 'bash tool/sync-version.sh --check'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Download frpc (macOS AMD64)
+        run: |
+          set -e
+          FRPC_VERSION="$(bash tool/frpc-version.sh)"
+          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
+          mkdir -p assets/frpc/macos
+          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_amd64.tar.gz" -o frpc_amd64.tar.gz
+          mkdir -p /tmp/frpc_amd64 && tar -xzf frpc_amd64.tar.gz -C /tmp/frpc_amd64
+          # 运行时（frpc_manager.dart）与 pubspec 固定读取 frpc_darwin_amd64.tar.gz，文件名须一致
+          tar -czf assets/frpc/macos/frpc_darwin_amd64.tar.gz -C /tmp/frpc_amd64/frp_${FRPC_VERSION}_darwin_amd64 frpc
+
+      - name: Build macOS
+        run: flutter build macos --release
+
+      - name: Verify architecture (must be x86_64)
+        run: |
+          set -e
+          BIN="build/macos/Build/Products/Release/AFRP OIDC Client.app/Contents/MacOS/AFRP OIDC Client"
+          if [ ! -f "$BIN" ]; then
+            echo "::error::找不到可执行文件 $BIN"
+            ls -la "build/macos/Build/Products/Release/" || true
+            exit 1
+          fi
+          ARCHS=$(lipo -archs "$BIN")
+          echo "archs: $ARCHS"
+          case "$ARCHS" in
+            *x86_64*) echo "✅ 确认是 x86_64 构建" ;;
+            *) echo "::error::不是 x86_64 构建（runner 可能落到 Apple Silicon 镜像）: $ARCHS"; exit 1 ;;
+          esac
+
+      - name: Package & Upload
+        run: |
+          set -e
+          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+          mkdir -p dist dmg-stage
+          ditto "build/macos/Build/Products/Release/AFRP OIDC Client.app" "dmg-stage/AFRP OIDC Client.app"
+          # 拖进「应用程序」的快捷方式，用户挂载后直接拖拽即可
+          ln -s /Applications "dmg-stage/Applications"
+          hdiutil create -volname "AFRP OIDC Client" -srcfolder dmg-stage -ov -format UDZO \
+            "dist/afrp-oidc-client_${VER}_macos_amd64.dmg"
+          rm -rf dmg-stage
+          ls -la dist/
+          gh release upload "v$VER" dist/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (backup)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-amd64-rebuild
+          path: dist/*
+          if-no-files-found: warn
+
   publish:
-    needs: [build, build_fallback]
-    if: always() && (needs.build.result == 'success' || needs.build_fallback.result == 'success')
+    needs: [build, build_fallback, build_amd64]
+    if: always() && (needs.build.result == 'success' || needs.build_fallback.result == 'success' || needs.build_amd64.result == 'success')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download macOS arm64 asset from Release
+      - name: Download macOS assets from Release
         run: |
           set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           mkdir -p dist
-          gh release download "v$VER" --pattern "afrp-oidc-client_${VER}_macos_arm64.dmg" --dir dist --clobber
+          gh release download "v$VER" --pattern "afrp-oidc-client_${VER}_macos_*.dmg" --dir dist --clobber
           ls -la dist/
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload macOS arm64 to R2 (app/)
+      - name: Upload macOS to R2 (app/)
         if: env.R2_ACCOUNT_ID != ''
         continue-on-error: true
         run: |
           chmod +x .github/scripts/upload-r2.sh
-          for f in dist/*macos_arm64*; do
+          for f in dist/*macos*; do
             [ -f "$f" ] || continue
             echo "=== 上传 $(basename "$f") 到 R2 (app/) ==="
             bash .github/scripts/upload-r2.sh "$f" "app" || echo "::warning::R2 上传失败: $f"
@@ -189,12 +257,12 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
 
-      - name: Update manifest (macos arm64 entry) and push
+      - name: Update manifest (macos entries) and push
         if: env.CI_API_SECRET != '' && env.CI_API_URL != ''
         run: |
           chmod +x .github/scripts/update-manifest-incremental.sh
           rm -f /tmp/manifest-updated.json
-          for f in dist/*macos_arm64*; do
+          for f in dist/*macos*; do
             [ -f "$f" ] || continue
             echo "=== 更新 manifest: $(basename "$f") (app) ==="
             FILE="$f" SUBDIR="app" SITE_URL="${SITE_URL:-https://www.afrp.net}" \
