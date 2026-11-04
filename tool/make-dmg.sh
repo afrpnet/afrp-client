@@ -29,8 +29,20 @@ hdiutil create -srcfolder "$STAGE" -volname "$VOL" -format UDRW -ov -o "$RW" >/d
 
 MOUNT="$(hdiutil attach -readwrite -noverify -nobrowse "$RW" | sed -n 's|.*\(/Volumes/.*\)$|\1|p' | tail -1)"
 echo "mounted: $MOUNT"
-osascript "$BG_DIR/layout.applescript" || echo "::warning::Finder 布局脚本失败，dmg 保持系统默认外观"
-hdiutil detach "$MOUNT" -quiet || hdiutil detach "$MOUNT" -force
+# Finder 布局脚本偶发 -1708（window doesn't understand the "update" message），重试一次；
+# 仍失败也只影响外观（保持系统默认），不阻断打包。
+osascript "$BG_DIR/layout.applescript" \
+  || osascript "$BG_DIR/layout.applescript" \
+  || echo "::warning::Finder 布局脚本失败，dmg 保持系统默认外观"
+# 卸载前先关掉可能仍打开着该卷的 Finder 窗口，否则脚本中途失败留下的窗口会让 detach "Resource busy"。
+osascript -e "tell application \"Finder\" to close (every window whose name is \"$VOL\")" 2>/dev/null || true
+# 多次强制卸载：偶发占用不该让整个 job 失败。
+detached=0
+for _ in 1 2 3 4 5; do
+  if hdiutil detach "$MOUNT" -force -quiet 2>/dev/null; then detached=1; break; fi
+  sleep 3
+done
+[ "$detached" = "1" ] || { echo "::error::无法卸载 $MOUNT"; exit 1; }
 
 mkdir -p "$(dirname "$OUT_DMG")"
 hdiutil convert "$RW" -format UDZO -ov -o "$OUT_DMG" >/dev/null
