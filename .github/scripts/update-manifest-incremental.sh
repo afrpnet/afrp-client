@@ -18,6 +18,8 @@ MANIFEST_URL="${SITE_URL}/download/manifest.json"
 FILENAME=$(basename "$FILE")
 VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
 DATE=$(date +%Y-%m-%d)
+# 需要一并顶掉的旧通道（逗号分隔），仅个别平台改过通道名时才非空
+LEGACY_CHANNELS=""
 
 # 检查文件版本是否与当前版本匹配（跳过旧版本文件）
 if [[ "$FILENAME" =~ _([0-9]+\.[0-9]+\.[0-9]+) ]]; then
@@ -48,12 +50,15 @@ case "$FILENAME" in
     elif [[ "$FILENAME" == *windows*portable.zip ]]; then
       PLATFORM="windows"; CHANNEL="portable"; ARCH="amd64"
       NOTES="Windows 10/11 x64 免安装版"
-    elif [[ "$FILENAME" == *macos*arm64.zip ]]; then
-      PLATFORM="macos"; CHANNEL="portable"; ARCH="arm64"
-      NOTES="macOS Apple Silicon 免安装版"
-    elif [[ "$FILENAME" == *macos*amd64.zip ]]; then
-      PLATFORM="macos"; CHANNEL="portable"; ARCH="amd64"
-      NOTES="macOS x64 免安装版"
+    elif [[ "$FILENAME" == *macos*arm64.dmg ]]; then
+      PLATFORM="macos"; CHANNEL="dmg"; ARCH="arm64"
+      NOTES="macOS Apple Silicon 磁盘映像（拖入「应用程序」安装）"
+      # 早期 macOS 产物是 zip、通道叫 portable，改成 dmg 后要把旧条目一并顶掉
+      LEGACY_CHANNELS="portable"
+    elif [[ "$FILENAME" == *macos*amd64.dmg ]]; then
+      PLATFORM="macos"; CHANNEL="dmg"; ARCH="amd64"
+      NOTES="macOS x64 磁盘映像（拖入「应用程序」安装）"
+      LEGACY_CHANNELS="portable"
     elif [[ "$FILENAME" == *linux*amd64*.deb ]]; then
       PLATFORM="linux"; CHANNEL="deb"; ARCH="amd64"
       NOTES="Linux x86_64 DEB 安装包（Debian/Ubuntu）"
@@ -149,7 +154,7 @@ elif ! curl -sS -o "$MANIFEST_TMP" "$MANIFEST_URL" 2>/dev/null; then
 fi
 
 # 导出所有变量供 PHP 使用
-export FILE FILENAME KIND PLATFORM CHANNEL ARCH VER DATE NOTES SHA256 SIZE R2_URL GH_URL SITE_URL MANIFEST_TMP
+export FILE FILENAME KIND PLATFORM CHANNEL ARCH VER DATE NOTES SHA256 SIZE R2_URL GH_URL SITE_URL MANIFEST_TMP LEGACY_CHANNELS
 
 # 使用 PHP 更新 manifest（更安全）
 php <<'PHP_SCRIPT'
@@ -175,11 +180,13 @@ $manifest = json_decode(file_get_contents($manifest_tmp), true) ?: ['schema' => 
 $items = $manifest['items'] ?? [];
 
 // 移除同 kind+platform+channel+arch 的旧条目（只保留最新版本）
+// 通道改过名的平台（如 macOS portable → dmg）还要顺带清掉旧通道条目，否则会一直挂在清单里
+$legacy = array_values(array_filter(explode(',', getenv('LEGACY_CHANNELS') ?: ''), 'strlen'));
 $filteredItems = [];
 foreach ($items as $it) {
     // 如果与当前文件是同类型同平台同通道同架构，跳过（用新版本替换）
-    if ($it['kind'] === $kind && $it['platform'] === $platform && 
-        $it['channel'] === $channel && $it['arch'] === $arch) {
+    if ($it['kind'] === $kind && $it['platform'] === $platform && $it['arch'] === $arch
+        && (in_array($it['channel'] ?? '', $legacy, true) || ($it['channel'] ?? '') === $channel)) {
         continue;
     }
     $filteredItems[] = $it;

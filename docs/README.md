@@ -7,7 +7,7 @@
 | 平台 | 状态 | 安装方式 |
 | --- | --- | --- |
 | Windows 10/11（x64） | 已发布 | 安装版 / 免安装版 |
-| macOS（Apple Silicon / Intel） | 已发布 | zip 解压 |
+| macOS（Apple Silicon / Intel） | 已发布 | dmg 拖入「应用程序」 |
 | Linux（amd64 / arm64） | 已发布 | tar.gz 解压 |
 | Android 7.0+ | 已发布 | APK 安装 |
 | HarmonyOS / OpenHarmony | 测试版 | HAP 侧载 |

@@ -24,6 +24,19 @@ class AppDelegate: FlutterAppDelegate {
   }
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    // 关掉窗口后进程继续存活，frpc 隧道不中断；菜单栏图标或 Dock 图标都能唤回窗口。
+    return false
+  }
+
+  override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    // 窗口已隐藏时点 Dock 图标，这里把主窗口重新显示出来
+    if !flag {
+      for window in sender.windows where window is MainFlutterWindow {
+        window.makeKeyAndOrderFront(self)
+        NSApp.activate(ignoringOtherApps: true)
+        break
+      }
+    }
     return true
   }
 

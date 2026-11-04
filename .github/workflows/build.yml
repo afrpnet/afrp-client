@@ -252,11 +252,16 @@ jobs:
           esac
       - name: Package & Upload
         run: |
+          set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          mkdir -p dist
-          cd build/macos/Build/Products/Release
-          ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_arm64.zip"
-          cd ../../../../
+          mkdir -p dist dmg-stage
+          ditto "build/macos/Build/Products/Release/AFRP OIDC Client.app" "dmg-stage/AFRP OIDC Client.app"
+          # 拖进「应用程序」的快捷方式，用户挂载后直接拖拽即可
+          ln -s /Applications "dmg-stage/Applications"
+          hdiutil create -volname "AFRP OIDC Client" -srcfolder dmg-stage -ov -format UDZO \
+            "dist/afrp-oidc-client_${VER}_macos_arm64.dmg"
+          rm -rf dmg-stage
+          ls -la dist/
           gh release upload "v$VER" dist/* --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -290,11 +295,16 @@ jobs:
         run: flutter build macos --release
       - name: Package & Upload
         run: |
+          set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          mkdir -p dist
-          cd build/macos/Build/Products/Release
-          ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_amd64.zip"
-          cd ../../../../
+          mkdir -p dist dmg-stage
+          ditto "build/macos/Build/Products/Release/AFRP OIDC Client.app" "dmg-stage/AFRP OIDC Client.app"
+          # 拖进「应用程序」的快捷方式，用户挂载后直接拖拽即可
+          ln -s /Applications "dmg-stage/Applications"
+          hdiutil create -volname "AFRP OIDC Client" -srcfolder dmg-stage -ov -format UDZO \
+            "dist/afrp-oidc-client_${VER}_macos_amd64.dmg"
+          rm -rf dmg-stage
+          ls -la dist/
           gh release upload "v$VER" dist/* --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1025,6 +1035,16 @@ jobs:
 
           # 列出 R2 app/ 目录下的所有文件
           FILES=$(aws s3 ls "s3://${R2_BUCKET}/app/" --endpoint-url "$ENDPOINT" 2>/dev/null | awk '{print $4}' || echo "")
+
+          # macOS 产物已从 zip 换成 dmg，遗留 zip 的类型键不会再有新版对应，直接删掉
+          for FILE in $FILES; do
+            case "$FILE" in
+              afrp-oidc-client_*_macos_*.zip)
+                echo "删除遗留 macOS zip: $FILE"
+                aws s3 rm "s3://${R2_BUCKET}/app/$FILE" --endpoint-url "$ENDPOINT" 2>/dev/null || true
+                ;;
+            esac
+          done
 
           # 本次成功产出的新版产物「类型键」集合（把版本号归一为 <VER>）。
           # 用于把「即将上传的当前版」并入候选版本，从而正确计算每类型最近 2 版。

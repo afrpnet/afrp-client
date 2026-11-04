@@ -16,11 +16,12 @@
 
 ## macOS
 
-下载 `afrp-oidc-client_<版本>_macos_<架构>.zip`，解压后双击 `.app`。
+下载 `afrp-oidc-client_<版本>_macos_<架构>.dmg`，打开后把 `AFRP OIDC Client` 拖到「应用程序」。
 
 - Apple Silicon 选 `arm64`，Intel 选 `amd64`
 - 首次运行需在「系统设置 → 隐私与安全性」中允许
-- macOS 版 frpc 以压缩包形式分发，运行时自动解压
+- 关闭主窗口不会退出程序，frpc 二进制程序继续在后台运行；点菜单栏图标或 Dock 图标可唤回窗口，彻底退出用菜单栏图标的「退出」
+- macOS 版 frpc 二进制程序以压缩包形式分发，运行时自动解压
 
 ## Linux
 

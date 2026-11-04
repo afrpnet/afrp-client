@@ -61,10 +61,13 @@ jobs:
         run: |
           set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          mkdir -p dist
-          cd build/macos/Build/Products/Release
-          ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_arm64.zip"
-          cd ../../../../
+          mkdir -p dist dmg-stage
+          ditto "build/macos/Build/Products/Release/AFRP OIDC Client.app" "dmg-stage/AFRP OIDC Client.app"
+          # 拖进「应用程序」的快捷方式，用户挂载后直接拖拽即可
+          ln -s /Applications "dmg-stage/Applications"
+          hdiutil create -volname "AFRP OIDC Client" -srcfolder dmg-stage -ov -format UDZO \
+            "dist/afrp-oidc-client_${VER}_macos_arm64.dmg"
+          rm -rf dmg-stage
           ls -la dist/
           gh release upload "v$VER" dist/* --clobber
         env:
@@ -132,10 +135,13 @@ jobs:
         run: |
           set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          mkdir -p dist
-          cd build/macos/Build/Products/Release
-          ditto -c -k --keepParent "AFRP OIDC Client.app" "../../../../dist/afrp-oidc-client_${VER}_macos_arm64.zip"
-          cd ../../../../
+          mkdir -p dist dmg-stage
+          ditto "build/macos/Build/Products/Release/AFRP OIDC Client.app" "dmg-stage/AFRP OIDC Client.app"
+          # 拖进「应用程序」的快捷方式，用户挂载后直接拖拽即可
+          ln -s /Applications "dmg-stage/Applications"
+          hdiutil create -volname "AFRP OIDC Client" -srcfolder dmg-stage -ov -format UDZO \
+            "dist/afrp-oidc-client_${VER}_macos_arm64.dmg"
+          rm -rf dmg-stage
           ls -la dist/
           gh release upload "v$VER" dist/* --clobber
         env:
@@ -162,7 +168,7 @@ jobs:
           set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           mkdir -p dist
-          gh release download "v$VER" --pattern "afrp-oidc-client_${VER}_macos_arm64.zip" --dir dist --clobber
+          gh release download "v$VER" --pattern "afrp-oidc-client_${VER}_macos_arm64.dmg" --dir dist --clobber
           ls -la dist/
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

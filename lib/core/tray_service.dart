@@ -197,8 +197,13 @@ class TrayService with TrayListener, WindowListener {
     if (_quitting) {
       return;
     }
-    // 托盘没建起来时隐藏窗口会让 App 彻底失联，直接退出
-    if (_closeToTray && _trayReady) {
+    if (!_closeToTray) {
+      quit();
+      return;
+    }
+    // 托盘没建起来时隐藏窗口会让 App 失联，只能退出；
+    // macOS 例外——Dock 图标仍在，点它就能唤回窗口，所以照样隐藏。
+    if (_trayReady || Platform.isMacOS) {
       hideToTray();
     } else {
       quit();

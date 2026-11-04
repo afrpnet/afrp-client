@@ -5,7 +5,7 @@
 | 平台 | 安装包 | 图形界面 | 内置 frpc |
 | --- | --- | --- | --- |
 | Windows 10/11（x64 / arm64） | 安装版 / 免安装版 | 是 | 是（0.71.0） |
-| macOS（Apple Silicon / Intel） | zip 解压 | 是 | 是 |
+| macOS（Apple Silicon / Intel） | dmg 拖入「应用程序」 | 是 | 是 |
 | Linux（amd64 / arm64） | tar.gz 解压 | 是（需桌面环境） | 是 |
 | Android 7.0+ | APK 安装 | 是 | 是 |
 | HarmonyOS / OpenHarmony | HAP 侧载 | 是 | 测试中 |
@@ -48,11 +48,12 @@
 
 ### 2.2 macOS
 
-1. 下载对应架构的 zip 包：
-   - Apple Silicon（M1/M2/M3/M4）：`macos_arm64.zip`
-   - Intel：`macos_amd64.zip`
-2. 解压后双击 `.app` 文件
+1. 下载对应架构的 dmg 磁盘映像：
+   - Apple Silicon（M1/M2/M3/M4）：`macos_arm64.dmg`
+   - Intel：`macos_amd64.dmg`
+2. 打开 dmg，把 `AFRP OIDC Client` 拖到「应用程序」
 3. 首次运行需在「系统设置 → 隐私与安全性」中点「仍要打开」
+4. 关闭主窗口不会退出程序，frpc 二进制程序继续在后台运行；点菜单栏图标或 Dock 图标可唤回窗口，彻底退出用菜单栏图标的「退出」
 
 ### 2.3 Linux
 

@@ -15,7 +15,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.3.30';
+const String kAppVersion = '1.3.31';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -933,6 +933,8 @@ Future<AppUpdateCheck?> checkAppUpdate(
   switch (platform) {
     case 'windows':
       channel = await isWindowsInstalled() ? 'installer' : 'portable';
+    case 'macos':
+      channel = 'dmg';
     case 'android':
       channel = 'apk';
     case 'ohos':
@@ -997,7 +999,7 @@ List<String>? _matchAppAsset(
   String? channel,
 ) {
   // 资产名模式：afrp-oidc-client_{ver}_{platform}_{arch}[_{channel}].{ext}
-  final exts = <String>['exe', 'zip', 'tar.gz', 'apk', 'hap'];
+  final exts = <String>['exe', 'zip', 'tar.gz', 'apk', 'hap', 'dmg'];
   final channels = channel != null ? [channel, ''] : [''];
 
   for (final ch in channels) {
