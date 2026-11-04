@@ -247,13 +247,9 @@ jobs:
         run: |
           set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          mkdir -p dist dmg-stage
-          ditto "build/macos/Build/Products/Release/AFRP OIDC Client.app" "dmg-stage/AFRP OIDC Client.app"
-          # 拖进「应用程序」的快捷方式，用户挂载后直接拖拽即可
-          ln -s /Applications "dmg-stage/Applications"
-          hdiutil create -volname "AFRP OIDC Client" -srcfolder dmg-stage -ov -format UDZO \
+          mkdir -p dist
+          bash tool/make-dmg.sh "build/macos/Build/Products/Release/AFRP OIDC Client.app" \
             "dist/afrp-oidc-client_${VER}_macos_arm64.dmg"
-          rm -rf dmg-stage
           ls -la dist/
           gh release upload "v$VER" dist/* --clobber
         env:
@@ -290,13 +286,9 @@ jobs:
         run: |
           set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          mkdir -p dist dmg-stage
-          ditto "build/macos/Build/Products/Release/AFRP OIDC Client.app" "dmg-stage/AFRP OIDC Client.app"
-          # 拖进「应用程序」的快捷方式，用户挂载后直接拖拽即可
-          ln -s /Applications "dmg-stage/Applications"
-          hdiutil create -volname "AFRP OIDC Client" -srcfolder dmg-stage -ov -format UDZO \
+          mkdir -p dist
+          bash tool/make-dmg.sh "build/macos/Build/Products/Release/AFRP OIDC Client.app" \
             "dist/afrp-oidc-client_${VER}_macos_amd64.dmg"
-          rm -rf dmg-stage
           ls -la dist/
           gh release upload "v$VER" dist/* --clobber
         env:
