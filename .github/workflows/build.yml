@@ -39,15 +39,8 @@ jobs:
       - name: Create release with notes
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          DISCLAIMER='> ⚠️ 鸿蒙版、安卓版、Linux 版未经测试，欢迎多提意见。'
           # --generate-notes：自动汇总上一个 tag 到本 tag 的提交，生成「更新内容」
           gh release create "v$VER" --title "v$VER" --generate-notes || true
-          # 在自动生成的更新说明之后追加免责声明（已存在则不重复追加）
-          BODY=$(gh release view "v$VER" --json body -q .body 2>/dev/null || echo "")
-          if ! printf '%s' "$BODY" | grep -qF "未经测试，欢迎多提意见"; then
-            printf '%s\n\n---\n\n%s\n' "$BODY" "$DISCLAIMER" > /tmp/rel-notes.md
-            gh release edit "v$VER" --notes-file /tmp/rel-notes.md || true
-          fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
