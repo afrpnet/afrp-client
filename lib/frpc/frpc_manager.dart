@@ -372,7 +372,7 @@ class FrpcManager extends ChangeNotifier {
   static final _ansiRe = RegExp(r'\x1B\[[0-9;]*[A-Za-z]|\x1B\][^\x07]*(\x07|\x1B\\)');
 
   void _onLine(String line) {
-    final clean = _ansiRe.replaceAll(line, '').trim();
+    final clean = line.replaceAll(_ansiRe, '').trim();
     if (clean.isEmpty) {
       return;
     }
