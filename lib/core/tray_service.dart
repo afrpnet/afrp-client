@@ -33,6 +33,14 @@ class TrayService with TrayListener, WindowListener {
   bool get closeToTray => _closeToTray;
   bool get minimizeToTray => _minimizeToTray;
 
+  /// 是否正在真正退出（托盘菜单「退出」）。用于区分「用户要退出」和
+  /// 「只是关窗口」，两者对 frpc 的处理完全不同。
+  bool get quitting => _quitting;
+
+  /// 当前能否把窗口藏进托盘。托盘没建起来时藏窗口会让 App 彻底失联，
+  /// 这种情况只能走退出流程。
+  bool get canHideToTray => _trayReady || Platform.isMacOS;
+
   /// 初始化窗口拦截与托盘菜单。需在 runApp 之前调用。
   Future<void> init() async {
     if (_inited || !supported) {

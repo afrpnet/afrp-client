@@ -98,6 +98,22 @@ class _FrpAppState extends State<FrpApp> {
     _reportLastUpdateResult();
     _lifecycle = AppLifecycleListener(
       onExitRequested: () async {
+        // Windows 点窗口关闭按钮时，引擎会在这里请求退出（window_manager 的
+        // onWindowClose 在 Windows 上不会触发）。
+        if (Platform.isWindows) {
+          // 「关闭到托盘」只是隐藏窗口，frpc 隧道要继续跑，所以取消这次退出并
+          // 自己把窗口藏进托盘；只有托盘菜单「退出」才真的结束进程、停掉 frpc。
+          if (TrayService.instance.closeToTray &&
+              !TrayService.instance.quitting &&
+              TrayService.instance.canHideToTray) {
+            await TrayService.instance.hideToTray();
+            return AppExitResponse.cancel;
+          }
+          // 关掉了「关闭到托盘」：点关闭就真正退出（停 frpc、销毁托盘和窗口）
+          await TrayService.instance.quit();
+          return AppExitResponse.exit;
+        }
+        // 其他平台保持原样：退出即停 frpc（macOS 的 Cmd+Q 不能被拦）
         await frpcManager.stop();
         return AppExitResponse.exit;
       },
