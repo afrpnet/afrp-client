@@ -28,14 +28,16 @@ jobs:
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           echo "version=$VER" >> "$GITHUB_OUTPUT"
           echo "tag=v$VER" >> "$GITHUB_OUTPUT"
-      - name: Resolve frpc core version
+      - name: Check frpc core version
         id: frpc-ver
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_API_URL: ${{ secrets.CI_API_URL }}
+          CI_API_SECRET: ${{ secrets.CI_API_SECRET }}
         run: |
-          FRPC_VER=$(bash tool/frpc-version.sh)
-          echo "version=$FRPC_VER" >> "$GITHUB_OUTPUT"
-          echo "::notice::本次构建内置 frpc 二进制程序 $FRPC_VER"
+          bash tool/check-frpc.sh --update --sync
+          echo "::notice::本次构建内置 frpc 二进制程序 ${{ steps.frpc-ver.outputs.version }}"
       - name: Create release with notes
         run: |
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
