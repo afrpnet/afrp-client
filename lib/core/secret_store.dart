@@ -28,14 +28,35 @@ class PlatformSecretStore implements SecretStore {
   static File? _fallbackFile;
   static Map<String, String>? _fallbackCache;
 
+  /// macOS 钥匙串条目与 App 的代码签名绑定，重新构建后签名变化就读不到旧条目
+  /// （errSecAuthFailed），表现为「退出后再打开要重新登录」。这里额外落一份文件镜像，
+  /// 钥匙串拿不到时用镜像兜底。
+  static bool get _mirrorEnabled => Platform.isMacOS;
+
   @override
   Future<String?> read(String key) async {
     if (!_useFileFallback) {
+      String? secure;
       try {
-        return await _storage.read(key: key).timeout(_timeout);
+        secure = await _storage.read(key: key).timeout(_timeout);
       } catch (e) {
-        _switchToFile('read', e);
+        if (_mirrorEnabled) {
+          // macOS：钥匙串条目与代码签名绑定，重装/重签后读不到旧条目，
+          // 改用文件镜像，不要因此判定为「未登录」。
+          debugPrint('SecretStore: $key 系统安全存储读取失败，改用文件镜像: $e');
+        } else {
+          _switchToFile('read', e);
+        }
       }
+      if (secure != null && secure.isNotEmpty) {
+        return secure;
+      }
+      final mirrored = (await _fallbackData())[key];
+      if (mirrored != null && mirrored.isNotEmpty) {
+        debugPrint('SecretStore: $key 从文件镜像恢复');
+        return mirrored;
+      }
+      return secure;
     }
     return (await _fallbackData())[key];
   }
@@ -45,11 +66,21 @@ class PlatformSecretStore implements SecretStore {
     if (!_useFileFallback) {
       try {
         await _storage.write(key: key, value: value).timeout(_timeout);
+        if (_mirrorEnabled) {
+          await _mirrorWrite(key, value);
+        }
         return;
       } catch (e) {
         _switchToFile('write', e);
       }
     }
+    final data = await _fallbackData();
+    data[key] = value;
+    await _persistFallback(data);
+  }
+
+  /// macOS：额外落一份文件镜像，钥匙串读不到时用镜像恢复
+  Future<void> _mirrorWrite(String key, String value) async {
     final data = await _fallbackData();
     data[key] = value;
     await _persistFallback(data);

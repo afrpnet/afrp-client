@@ -117,9 +117,15 @@ class AppState extends ChangeNotifier {
     }
 
     // 挨个尝试，用第一个能连上的作为 baseUrl（总超时 10 秒）
-    baseUrl = await _probeBootstrapUrls(bootstrapUrls).timeout(
+    // 上次用成功的地址排在最前，避免多域名/多实例时切换站点导致令牌校验失败
+    final lastBaseUrl = _prefsData[_kBaseUrl] as String?;
+    final candidates = <String>[
+      if (lastBaseUrl != null && lastBaseUrl.isNotEmpty) lastBaseUrl,
+      ...bootstrapUrls.where((u) => u != lastBaseUrl),
+    ];
+    baseUrl = await _probeBootstrapUrls(candidates).timeout(
       const Duration(seconds: 10),
-      onTimeout: () => bootstrapUrls.isNotEmpty ? bootstrapUrls.first : defaultBaseUrl,
+      onTimeout: () => candidates.isNotEmpty ? candidates.first : defaultBaseUrl,
     );
     debugPrint('Bootstrap complete, baseUrl=$baseUrl');
 
@@ -128,7 +134,7 @@ class AppState extends ChangeNotifier {
     selectedServerId = _prefsData[_kServerId] as int?;
     autoConnectOnLaunch = _prefsData[_kAutoConnect] as bool? ?? true;
     loggedIn = (token ?? '').isNotEmpty;
-    
+
     // 加载服务器配置（logo、主题色等）
     try {
       await loadConfig();
@@ -137,7 +143,7 @@ class AppState extends ChangeNotifier {
       debugPrint('Config load failed: $e');
       // 配置加载失败不阻塞启动
     }
-    
+
     booted = true;
     notifyListeners();
 
@@ -148,7 +154,9 @@ class AppState extends ChangeNotifier {
         await loadUnread();
       } on ApiException catch (e) {
         if (e.isUnauthorized) {
-          await logout(silent: true);
+          // 令牌无效/过期：清掉登录态但保留令牌本身，
+          // 换回原来的站点地址后仍可直接登录态启动，不必重新输入密码。
+          await logout(silent: true, keepToken: true);
         }
       }
     }
@@ -213,16 +221,21 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> logout({bool silent = false}) async {
-    if (!silent && loggedIn) {
+  /// [keepToken] 为 true 时只清掉内存里的登录态，保留本地令牌。
+  /// 启动校验失败时不删令牌，用户换回原来的站点地址后仍可直接登录态启动，
+  /// 也不必重新输入密码才能看到自己填过的密钥和隧道。
+  Future<void> logout({bool silent = false, bool keepToken = false}) async {
+    if (!keepToken && !silent && loggedIn) {
       try {
         await api.post('/api/logout.php');
       } on ApiException {
         // 服务端不可达时也允许本地登出
       }
     }
-    await _secrets.delete(_kToken);
-    api.token = null;
+    if (!keepToken) {
+      await _secrets.delete(_kToken);
+      api.token = null;
+    }
     user = null;
     servers = [];
     groups = [];
@@ -508,15 +521,46 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /* ==================== 隧道（按服务器保存） ==================== */
+  /* ==================== 隧道（账号级共用一份） ==================== */
 
-  static String _tunnelKey(int serverId) => 'tunnels_$serverId';
+  /// 账号级隧道列表的存储键；切换服务器不会清空
+  static const _kTunnelsPrefix = 'tunnels_acct_';
 
-  List<Tunnel> tunnelsOf(int serverId) {
-    final raw = _prefsData[_tunnelKey(serverId)] as String?;
-    if (raw == null || raw.isEmpty) {
+  String? get _tunnelScopeKey {
+    final name = user?.username ?? '';
+    if (name.isEmpty) {
+      return null;
+    }
+    return '$_kTunnelsPrefix$name';
+  }
+
+  /// 当前账号的隧道列表（所有服务器共用）
+  List<Tunnel> get tunnels {
+    final key = _tunnelScopeKey;
+    if (key == null) {
       return [];
     }
+    final raw = _prefsData[key] as String?;
+    if (raw != null && raw.isNotEmpty) {
+      return _decodeTunnels(raw);
+    }
+    final migrated = _migrateLegacyTunnels();
+    _prefsData[key] = jsonEncode(migrated.map((t) => t.toJson()).toList());
+    unawaited(_savePrefs().catchError((_) {}));
+    return migrated;
+  }
+
+  Future<void> saveTunnels(List<Tunnel> tunnels) async {
+    final key = _tunnelScopeKey;
+    if (key == null) {
+      return;
+    }
+    _prefsData[key] = jsonEncode(tunnels.map((t) => t.toJson()).toList());
+    await _savePrefs();
+    notifyListeners();
+  }
+
+  List<Tunnel> _decodeTunnels(String raw) {
     try {
       final list = jsonDecode(raw) as List;
       return list
@@ -527,11 +571,39 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> saveTunnels(int serverId, List<Tunnel> tunnels) async {
-    _prefsData[_tunnelKey(serverId)] =
-        jsonEncode(tunnels.map((t) => t.toJson()).toList());
-    await _savePrefs();
-    notifyListeners();
+  /// 旧版本按服务器分别保存（`tunnels_` + 服务器 ID），迁移到账号级：
+  /// 合并所有服务器的列表（当前所选服务器优先），同名只保留一条
+  List<Tunnel> _migrateLegacyTunnels() {
+    if ((user?.username ?? '').isEmpty) {
+      // 未登录时不迁移，避免把旧数据落到匿名账号名下
+      return [];
+    }
+    final legacyKeys = _prefsData.keys
+        .where((k) =>
+            k.startsWith('tunnels_') && !k.startsWith(_kTunnelsPrefix))
+        .toList();
+    if (legacyKeys.isEmpty) {
+      return [];
+    }
+    final preferred =
+        selectedServerId == null ? null : 'tunnels_$selectedServerId';
+    final ordered = <String>[
+      if (preferred != null && legacyKeys.contains(preferred)) preferred,
+      ...legacyKeys.where((k) => k != preferred),
+    ];
+    final result = <Tunnel>[];
+    final names = <String>{};
+    for (final k in ordered) {
+      for (final t in _decodeTunnels(_prefsData[k] as String? ?? '')) {
+        if (names.add(t.name)) {
+          result.add(t);
+        }
+      }
+    }
+    for (final k in legacyKeys) {
+      _prefsData.remove(k);
+    }
+    return result;
   }
 
   /* ==================== 设置 ==================== */

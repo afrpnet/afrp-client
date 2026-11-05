@@ -24,7 +24,7 @@ Future<void> autoConnectFrpc() async {
       return;
     }
   }
-  final tunnels = appState.tunnelsOf(server.id);
+  final tunnels = appState.tunnels;
   final resolvedAddr = await resolveServerAddr(server.addr);
   final toml = buildFrpcToml(
     server: server,

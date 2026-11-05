@@ -315,7 +315,7 @@ class _ConnectPageState extends State<ConnectPage> {
   /* ==================== 隧道 ==================== */
 
   Widget _tunnelsCard(ServerInfo? server) {
-    final tunnels = server == null ? <Tunnel>[] : appState.tunnelsOf(server.id);
+    final tunnels = appState.tunnels;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -352,6 +352,16 @@ class _ConnectPageState extends State<ConnectPage> {
                 ),
               )
             else ...[
+              Padding(
+                padding: const EdgeInsets.only(top: 3, bottom: 2),
+                child: Text(
+                  '隧道在所有服务器之间共用，切换服务器不会清空；HTTP 子域名的后缀跟随当前所选服务器。',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
               if (frpcManager.running)
                 Padding(
                   padding: const EdgeInsets.only(top: 3, bottom: 2),
@@ -388,7 +398,7 @@ class _ConnectPageState extends State<ConnectPage> {
                         icon: const Icon(Icons.delete_outline, size: 20),
                         onPressed: server == null
                             ? null
-                            : () => _deleteTunnel(server, tunnels[i]),
+                            : () => _deleteTunnel(tunnels[i]),
                       ),
                     ],
                   ),
@@ -422,8 +432,8 @@ class _ConnectPageState extends State<ConnectPage> {
     if (result == null || !mounted) {
       return;
     }
-    // tunnelsOf 每次返回新解码对象，须按名称定位（名称即 frp 代理名，需唯一）
-    final tunnels = appState.tunnelsOf(server.id);
+    // tunnels 每次返回新解码对象，须按名称定位（名称即 frp 代理名，需唯一）
+    final tunnels = appState.tunnels;
     final i = existing == null
         ? -1
         : tunnels.indexWhere((t) => t.name == existing.name);
@@ -439,10 +449,10 @@ class _ConnectPageState extends State<ConnectPage> {
     } else {
       tunnels.add(result);
     }
-    await appState.saveTunnels(server.id, tunnels);
+    await appState.saveTunnels(tunnels);
   }
 
-  Future<void> _deleteTunnel(ServerInfo server, Tunnel tunnel) async {
+  Future<void> _deleteTunnel(Tunnel tunnel) async {
     final ok = await confirmDialog(
       context,
       '删除隧道',
@@ -453,9 +463,9 @@ class _ConnectPageState extends State<ConnectPage> {
     if (ok != true) {
       return;
     }
-    final tunnels = appState.tunnelsOf(server.id)
+    final tunnels = appState.tunnels
       ..removeWhere((t) => t.name == tunnel.name);
-    await appState.saveTunnels(server.id, tunnels);
+    await appState.saveTunnels(tunnels);
   }
 
   /* ==================== 连接控制 ==================== */
@@ -598,7 +608,7 @@ class _ConnectPageState extends State<ConnectPage> {
       snack(context, '请先设置 OIDC 密钥（粘贴已有密钥或一键生成）', error: true);
       return;
     }
-    final tunnels = appState.tunnelsOf(server.id);
+    final tunnels = appState.tunnels;
     if (tunnels.isEmpty) {
       final go = await confirmDialog(
         context,
@@ -644,7 +654,7 @@ class _ConnectPageState extends State<ConnectPage> {
       user: user,
       config: appState.config,
       clientSecret: secret,
-      tunnels: appState.tunnelsOf(server.id),
+      tunnels: appState.tunnels,
     );
     showDialog<void>(
       context: context,
