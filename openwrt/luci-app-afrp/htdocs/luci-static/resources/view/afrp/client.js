@@ -180,7 +180,7 @@ return view.extend({
 		pageChildren.push(
 			E('h2', {}, [
 				_('AFRP 内网穿透'),
-				E('sup', { style: 'margin-left:4px;color:#888;font-weight:normal;font-size:0.5em;vertical-align:super' }, 'v__AFRP_VERSION__')
+				E('sup', { style: 'margin-left:4px;color:#888;font-weight:normal;font-size:0.5em;vertical-align:super;position:static' }, 'v__AFRP_VERSION__')
 			]),
 			E('p', { class: 'cbi-map-descr' }, [
 				_('登录官网【'),

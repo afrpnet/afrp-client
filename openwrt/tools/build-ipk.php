@@ -553,7 +553,7 @@ function verify(array $b): bool
         if (isset($datFiles[$cjKey])) {
             $body = $datFiles[$cjKey]['data'];
             if (strpos($body, VERSION_PLACEHOLDER) !== false) { $errs[] = '产物中仍有未替换的版本号占位符'; }
-            if (strpos($body, ' v' . $b['ver'] . "'") === false) { $errs[] = 'LuCI 页面未写入版本号 v' . $b['ver']; }
+            if (strpos($body, 'v' . $b['ver'] . "'") === false) { $errs[] = 'LuCI 页面未写入版本号 v' . $b['ver']; }
         } else {
             $errs[] = 'data 缺少文件: ' . VERSION_TARGET;
         }
