@@ -4,6 +4,8 @@
 //   update-core status
 //   update-core check <base_url> <arch>   // base_url 已废弃，保留兼容
 //   update-core install <url> <sha256> [file]
+//   update-core install-bg <url> <sha256>   // 后台安装，立即返回
+//   update-core install-status              // 查询后台安装进度与结果
 // 数据源：GitHub fatedier/frp Releases（直连不通自动走代理镜像）
 
 import { popen, readfile } from 'fs';
@@ -490,6 +492,76 @@ function cmdInstall(url, sha256) {
 	emit({ ok: true, version: nv, path: '/usr/bin/frpc' });
 }
 
+// 下载 + 多源回退 + 校验可能耗时数分钟，远超 LuCI 的 XHR 超时。
+// 同步执行时页面会报「安装失败：XHR request timed out」，而后台其实装好了，
+// 所以安装改为后台跑，页面轮询结果文件。
+let JOB_PID = '/tmp/afrp-install.pid';
+let JOB_OUT = '/tmp/afrp-install.json';
+let JOB_ERR = '/tmp/afrp-install.err';
+
+function jobRunning() {
+	let pid = trim(run('cat ' + JOB_PID + ' 2>/dev/null'));
+	if (match(pid, regexp('^[0-9]+$')) == null) {
+		return false;
+	}
+	// pid 会被系统复用，确认该进程仍是本脚本
+	return okCmd('kill -0 ' + pid) && okCmd('grep -q update-core /proc/' + pid + '/cmdline');
+}
+
+function cmdInstallBg(url, sha256) {
+	url = trim(str(url));
+	sha256 = str(sha256);
+
+	if (match(url, regexp('^https?://')) == null) {
+		fail('下载地址无效');
+	}
+	if (jobRunning()) {
+		emit({ ok: true, started: false, running: true });
+		return;
+	}
+	let qu = shq(url);
+	let qs = shq(sha256);
+	if (qu == null || qs == null) {
+		fail('参数包含非法字符');
+	}
+
+	let inner = '/usr/libexec/afrp/update-core install ' + qu + ' ' + qs;
+	run('rm -f ' + JOB_OUT + ' ' + JOB_ERR + ' ' + JOB_PID);
+	// 子 shell 的输出全部重定向到文件，popen 才能立刻返回而不等安装结束
+	run('( ' + inner + ' > ' + JOB_OUT + ' 2> ' + JOB_ERR + ' ) >/dev/null 2>&1 & echo $! > ' + JOB_PID);
+	emit({ ok: true, started: true, running: true });
+}
+
+function cmdInstallStatus() {
+	let running = jobRunning();
+	let raw = trim(run('cat ' + JOB_OUT + ' 2>/dev/null'));
+	let res = null;
+	if (raw != '') {
+		try {
+			res = json(raw);
+		} catch (e) {
+			res = null;
+		}
+	}
+	if (res != null) {
+		emit({ ok: true, done: true, running: false, result: res });
+		return;
+	}
+	if (running) {
+		emit({ ok: true, done: false, running: true });
+		return;
+	}
+	if (trim(run('cat ' + JOB_PID + ' 2>/dev/null')) == '') {
+		emit({ ok: true, done: false, running: false, idle: true });
+		return;
+	}
+	let err = trim(run('tail -n 3 ' + JOB_ERR + ' 2>/dev/null'));
+	emit({
+		ok: true, done: true, running: false,
+		result: { ok: false, error: '安装进程已退出但未返回结果' + (err != '' ? '：' + err : '') }
+	});
+}
+
 let cmd = length(ARGV) >= 1 ? str(ARGV[0]) : 'status';
 let args = [];
 for (let i = 1; i < length(ARGV); i++) {
@@ -502,6 +574,10 @@ if (cmd == 'status') {
 	cmdCheck(args[0], args[1]);
 } else if (cmd == 'install') {
 	cmdInstall(args[0], args[1]);
+} else if (cmd == 'install-bg') {
+	cmdInstallBg(args[0], args[1]);
+} else if (cmd == 'install-status') {
+	cmdInstallStatus();
 } else {
 	fail('未知操作：' + cmd);
 }

@@ -2,6 +2,7 @@
 'require view';
 'require fs';
 'require ui';
+'require afrp.core-update as coreUpdate';
 
 var IMPORT_ACCOUNT = '/usr/libexec/afrp/import-account';
 var UPDATE_CORE = '/usr/libexec/afrp/update-core';
@@ -245,17 +246,13 @@ return view.extend({
 					return;
 				}
 				var c = d.candidates[0];
-				return fs.exec(UPDATE_CORE, ['install', c.url, c.sha256, c.file]).then(function(res2) {
-					var d2 = null;
-					try { d2 = JSON.parse((res2.stdout || '').trim()); } catch (e) { d2 = null; }
-					if (d2 && d2.ok) {
-						frpcStatus.textContent = _('frpc 已自动安装：') + d2.version;
-					} else {
-						frpcStatus.textContent = _('frpc 自动安装失败：') + (d2 ? d2.error : '');
-					}
+				return coreUpdate.install(c.url, c.sha256, function(sec) {
+					frpcStatus.textContent = _('frpc 正在自动安装…') + ' ' + sec + 's';
+				}).then(function(d2) {
+					frpcStatus.textContent = _('frpc 已自动安装：') + d2.version;
 				});
-			}).catch(function() {
-				frpcStatus.textContent = _('frpc 自动安装失败');
+			}).catch(function(err) {
+				frpcStatus.textContent = _('frpc 自动安装失败：') + (err && err.message ? err.message : '');
 			});
 		}
 

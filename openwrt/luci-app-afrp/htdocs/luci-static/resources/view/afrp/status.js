@@ -2,6 +2,7 @@
 'require view';
 'require fs';
 'require rpc';
+'require afrp.core-update as coreUpdate';
 
 var CONFIG_PATH = '/etc/afrp/config.json';
 
@@ -221,15 +222,12 @@ return view.extend({
 			if (!window.confirm(_('将下载并替换 frpc 二进制程序（先校验 SHA-256），随后需要重启服务才能生效。继续？')))
 				return;
 			btn.disabled = true;
-			coreInfo.textContent = _('正在下载并校验…文件较大时可能需要数十秒，请勿关闭页面。');
-			
+			coreInfo.textContent = _('正在下载并校验，请勿关闭页面…');
+
 			// 清单条目的 sha256 与其 url 一一对应，只能用条目自身的地址
-			var installUrl = entry.url;
-			return fs.exec(UPDATE_CORE, [ 'install', installUrl, entry.sha256 ]).then(function(res) {
-				var d = null;
-				try { d = JSON.parse((res.stdout || '').trim()); } catch (e) { d = null; }
-				if (d == null || d.ok != true)
-					throw new Error(d && d.error ? d.error : (_('安装失败') + '（exit ' + res.code + '）'));
+			return coreUpdate.install(entry.url, entry.sha256, function(sec) {
+				coreInfo.textContent = _('正在下载并校验，请勿关闭页面…') + ' ' + sec + 's';
+			}).then(function(d) {
 				coreInfo.textContent = _('安装成功：frpc v' + d.version + '。请点击上方「重启」使新二进制程序生效。');
 			}).catch(function(err) {
 				coreInfo.textContent = _('安装失败：') + err.message;
