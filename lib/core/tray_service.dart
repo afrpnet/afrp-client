@@ -82,11 +82,14 @@ class TrayService with TrayListener, WindowListener {
 
   Future<void> _initTray() async {
     try {
-      // Windows 用 .ico；Linux/macOS 用 .png（插件会按平台解析资源路径）
+      // Windows 用 .ico；Linux 用彩色 .png；macOS 用单色模板图，
+      // 系统菜单栏深色自动渲染白色、浅色自动渲染黑色，与系统图标一致
       final icon = Platform.isWindows
           ? 'assets/brand/tray_icon.ico'
-          : 'assets/brand/tray_icon.png';
-      await trayManager.setIcon(icon, iconSize: 20);
+          : Platform.isMacOS
+              ? 'assets/brand/tray_icon_macos.png'
+              : 'assets/brand/tray_icon.png';
+      await trayManager.setIcon(icon, isTemplate: Platform.isMacOS, iconSize: 20);
       // 菜单必须在图标之后立刻挂上：Linux 的 appindicator 插件没有实现
       // setToolTip，放在它后面会被异常打断，导致托盘只剩图标、没有菜单。
       await trayManager.setContextMenu(
