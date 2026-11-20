@@ -149,7 +149,7 @@ Architecture: any
 Description: AFRP OIDC 内网穿透客户端
 EOF
 DEPENDS=$(cd "$ROOT" && dpkg-shlibdeps -O opt/afrp-oidc-client/afrp_oidc opt/afrp-oidc-client/lib/*.so 2>/dev/null | sed -n 's/^shlibs:Depends=//p' | head -1)
-[ -n "$DEPENDS" ] || DEPENDS="libgtk-3-0, libstdc++6, libsecret-1-0, libayatana-appindicator3-1"
+[ -n "$DEPENDS" ] || DEPENDS="libgtk-3-0, libstdc++6, libsecret-1-0, libayatana-appindicator3-1, libwayland-client0, libwayland-egl1"
 SIZE=$(du -sk "$ROOT/opt" | cut -f1)
 cat > "$ROOT/DEBIAN/control" <<EOF
 Package: afrp-oidc-client
