@@ -48,9 +48,7 @@
 
 ### 2.2 macOS
 
-1. 下载对应架构的 dmg 磁盘映像：
-   - Apple Silicon（M1/M2/M3/M4）：`macos_arm64.dmg`
-   - Intel：`macos_amd64.dmg`
+1. 下载 dmg 磁盘映像（通用版，Apple Silicon / Intel 通用）：`macos_universal.dmg`
 2. 打开 dmg，把 `AFRP OIDC Client` 拖到「应用程序」
 3. 首次运行需在「系统设置 → 隐私与安全性」中点「仍要打开」
 4. 关闭主窗口不会退出程序，frpc 二进制程序继续在后台运行；点菜单栏图标或 Dock 图标可唤回窗口，彻底退出用菜单栏图标的「退出」

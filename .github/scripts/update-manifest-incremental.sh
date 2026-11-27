@@ -50,14 +50,10 @@ case "$FILENAME" in
     elif [[ "$FILENAME" == *windows*portable.zip ]]; then
       PLATFORM="windows"; CHANNEL="portable"; ARCH="amd64"
       NOTES="Windows 10/11 x64 免安装版"
-    elif [[ "$FILENAME" == *macos*arm64.dmg ]]; then
-      PLATFORM="macos"; CHANNEL="dmg"; ARCH="arm64"
-      NOTES="macOS Apple Silicon 磁盘映像（拖入「应用程序」安装）"
+    elif [[ "$FILENAME" == *macos*universal.dmg ]]; then
+      PLATFORM="macos"; CHANNEL="dmg"; ARCH="universal"
+      NOTES="macOS 通用磁盘映像（Apple Silicon / Intel 通用，拖入「应用程序」安装）"
       # 早期 macOS 产物是 zip、通道叫 portable，改成 dmg 后要把旧条目一并顶掉
-      LEGACY_CHANNELS="portable"
-    elif [[ "$FILENAME" == *macos*amd64.dmg ]]; then
-      PLATFORM="macos"; CHANNEL="dmg"; ARCH="amd64"
-      NOTES="macOS x64 磁盘映像（拖入「应用程序」安装）"
       LEGACY_CHANNELS="portable"
     elif [[ "$FILENAME" == *linux*amd64*.deb ]]; then
       PLATFORM="linux"; CHANNEL="deb"; ARCH="amd64"
@@ -182,8 +178,16 @@ $items = $manifest['items'] ?? [];
 // 移除同 kind+platform+channel+arch 的旧条目（只保留最新版本）
 // 通道改过名的平台（如 macOS portable → dmg）还要顺带清掉旧通道条目，否则会一直挂在清单里
 $legacy = array_values(array_filter(explode(',', getenv('LEGACY_CHANNELS') ?: ''), 'strlen'));
+// macOS 从 arm64 / amd64 两份合并成 universal 一份后，旧的两条要一并清掉，
+// 否则下载页会同时列出三份 macOS 产物
+$clearSameChannel = ($kind === 'app' && $platform === 'macos'
+    && $channel === 'dmg' && $arch === 'universal');
 $filteredItems = [];
 foreach ($items as $it) {
+    if ($clearSameChannel && ($it['kind'] ?? '') === 'app' && ($it['platform'] ?? '') === 'macos'
+        && ($it['channel'] ?? '') === 'dmg' && ($it['arch'] ?? '') !== 'universal') {
+        continue;
+    }
     // 如果与当前文件是同类型同平台同通道同架构，跳过（用新版本替换）
     if ($it['kind'] === $kind && $it['platform'] === $platform && $it['arch'] === $arch
         && (in_array($it['channel'] ?? '', $legacy, true) || ($it['channel'] ?? '') === $channel)) {

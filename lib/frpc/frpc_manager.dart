@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -53,6 +54,10 @@ class FrpcManager extends ChangeNotifier {
     return false;
   }
 
+  /// macOS 内置 frpc 的架构名：App 是 universal 包（arm64 + x86_64），
+  /// Apple Silicon 走 arm64 核心，Intel 走 amd64 核心，都不需要 Rosetta。
+  static String get _macosArch => Abi.current() == Abi.macosArm64 ? 'arm64' : 'amd64';
+
   /// 按当前平台返回资源 key 与释放后的文件名；macOS 用 tar.gz 分发（规避平台查杀误报）
   static (String asset, String exeName) get _platformAsset {
     if (Platform.isWindows) {
@@ -62,7 +67,7 @@ class FrpcManager extends ChangeNotifier {
       return ('assets/frpc/linux/frpc', 'frpc');
     }
     if (Platform.isMacOS) {
-      return ('assets/frpc/macos/frpc_darwin_amd64.tar.gz', 'frpc');
+      return ('assets/frpc/macos/frpc_darwin_$_macosArch.tar.gz', 'frpc');
     }
     if (Platform.isAndroid) {
       return ('', 'frpc'); // Android 需要动态下载
@@ -90,6 +95,7 @@ class FrpcManager extends ChangeNotifier {
     final dir = await _workDir();
     final bin = File('${dir.path}${Platform.pathSeparator}$exeName');
     final marker = File('${dir.path}${Platform.pathSeparator}.version');
+    final archMarker = File('${dir.path}${Platform.pathSeparator}.arch');
 
     // Android：frpc 作为 native lib（libfrpc.so）随 APK 打包，从只读且可执行的
     // nativeLibraryDir 运行，绕过 Android 10+ 禁止从应用可写目录 exec 的限制（W^X）。
@@ -102,7 +108,11 @@ class FrpcManager extends ChangeNotifier {
     }
 
     // 二进制与版本标记同时存在即信任；可能已被「frpc 二进制程序更新」替换过，勿用内置版覆盖
-    if (bin.existsSync() && marker.existsSync()) {
+    // macOS 上内置核心按 CPU 架构分发，架构标记不符（换机/旧版只带 amd64）时必须重新释放
+    final archMatches = !Platform.isMacOS ||
+        (archMarker.existsSync() &&
+            archMarker.readAsStringSync().trim() == _macosArch);
+    if (bin.existsSync() && marker.existsSync() && archMatches) {
       _installedVersion = marker.readAsStringSync().trim();
       _binPath = bin.path;
       return bin.path;
@@ -137,6 +147,9 @@ class FrpcManager extends ChangeNotifier {
       await Process.run('chmod', ['755', bin.path]);
     }
     marker.writeAsStringSync(frpcVersion);
+    if (Platform.isMacOS) {
+      archMarker.writeAsStringSync(_macosArch);
+    }
     _installedVersion = frpcVersion;
     _binPath = bin.path;
     notifyListeners();
@@ -272,6 +285,10 @@ class FrpcManager extends ChangeNotifier {
     await tmp.rename(dest.path);
     final marker = File('${dir.path}${Platform.pathSeparator}.version');
     await marker.writeAsString(version, flush: true);
+    if (Platform.isMacOS) {
+      final archMarker = File('${dir.path}${Platform.pathSeparator}.arch');
+      await archMarker.writeAsString(_macosArch, flush: true);
+    }
     _installedVersion = version;
     _binPath = dest.path;
     notifyListeners();

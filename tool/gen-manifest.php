@@ -19,8 +19,7 @@ $date = date('Y-m-d');
 $rules = [
     ['~^afrp-oidc-client_([0-9.]+)_windows_amd64_setup\.exe$~', 'windows', 'installer', 'amd64', 'Windows 10/11 x64 安装版（自动配置 Defender 排除）'],
     ['~^afrp-oidc-client_([0-9.]+)_windows_amd64_portable\.zip$~', 'windows', 'portable', 'amd64', 'Windows 10/11 x64 免安装版（解压即用）'],
-    ['~^afrp-oidc-client_([0-9.]+)_macos_amd64\.dmg$~', 'macos', 'dmg', 'amd64', 'macOS x64 磁盘映像（拖入「应用程序」安装）'],
-    ['~^afrp-oidc-client_([0-9.]+)_macos_arm64\.dmg$~', 'macos', 'dmg', 'arm64', 'macOS Apple Silicon 磁盘映像（拖入「应用程序」安装）'],
+    ['~^afrp-oidc-client_([0-9.]+)_macos_universal\.dmg$~', 'macos', 'dmg', 'universal', 'macOS 通用磁盘映像（Apple Silicon / Intel 通用，拖入「应用程序」安装）'],
     ['~^afrp-oidc-client_([0-9.]+)_linux_amd64_portable\.tar\.gz$~', 'linux', 'portable', 'amd64', 'Linux x86_64 免安装版（解压后运行 afrp-oidc.sh）'],
     ['~^afrp-oidc-client_([0-9.]+)_linux_amd64\.appimage$~', 'linux', 'appimage', 'amd64', 'Linux x86_64 AppImage（chmod +x 后直接运行）'],
     ['~^afrp-oidc-client_([0-9.]+)_linux_arm64_portable\.tar\.gz$~', 'linux', 'portable', 'arm64', 'Linux ARM64 免安装版（解压后运行 afrp-oidc.sh）'],
@@ -125,6 +124,27 @@ foreach (glob($dist . '/*') ?: [] as $path) {
     }
 }
 echo "本次登记/更新 {$n} 条\n";
+
+// 3.5 清理被合并掉的旧条目：macOS 从 arm64 / amd64 两份合并成 universal 一份后，
+// 旧的两条不能再留在清单里（否则下载页会同时列出三份 macOS 产物）
+$hasUniversalMac = false;
+foreach ($items as $it) {
+    if (($it['kind'] ?? '') === 'app' && ($it['platform'] ?? '') === 'macos'
+        && ($it['channel'] ?? '') === 'dmg' && ($it['arch'] ?? '') === 'universal') {
+        $hasUniversalMac = true;
+        break;
+    }
+}
+if ($hasUniversalMac) {
+    $items = array_values(array_filter($items, function (array $it): bool {
+        if (($it['kind'] ?? '') === 'app' && ($it['platform'] ?? '') === 'macos'
+            && ($it['channel'] ?? '') === 'dmg' && ($it['arch'] ?? '') !== 'universal') {
+            echo "  清理旧条目：" . ($it['file'] ?? '?') . "\n";
+            return false;
+        }
+        return true;
+    }));
+}
 
 // 4. 按后台规则排序（客户端在前；平台→通道→架构→日期倒序）
 $order = array_flip(['windows', 'macos', 'linux', 'android', 'ohos', 'openwrt']);

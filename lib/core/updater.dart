@@ -16,7 +16,7 @@ import 'models.dart';
 import 'sha256.dart';
 
 /// App 版本号（发版时与 pubspec.yaml、安装脚本同步更新）
-const String kAppVersion = '1.4.8';
+const String kAppVersion = '1.4.9';
 
 const MethodChannel _installerChannel = MethodChannel('afrp_oidc/installer');
 
@@ -479,17 +479,20 @@ UpdateEntry? chooseEntry(
   UpdateEntry? pick(Iterable<UpdateEntry> src) {
     UpdateEntry? best;
     for (final e in src) {
+      final eArch = _normalizeArch(e.arch);
+      // 'all' 与 'universal' 都不挑架构，任何 CPU 都能用
       if (wantArch != null &&
           e.arch.isNotEmpty &&
-          _normalizeArch(e.arch) != 'all' &&
-          _normalizeArch(e.arch) != wantArch) {
+          eArch != 'all' &&
+          eArch != 'universal' &&
+          eArch != wantArch) {
         continue;
       }
       if (best == null) {
         best = e;
         continue;
       }
-      final eExact = wantArch != null && _normalizeArch(e.arch) == wantArch;
+      final eExact = wantArch != null && eArch == wantArch;
       final bExact = wantArch != null && _normalizeArch(best.arch) == wantArch;
       if (eExact != bExact) {
         if (eExact) {
@@ -1002,15 +1005,19 @@ List<String>? _matchAppAsset(
   // 资产名模式：afrp-oidc-client_{ver}_{platform}_{arch}[_{channel}].{ext}
   final exts = <String>['exe', 'zip', 'tar.gz', 'apk', 'hap', 'dmg'];
   final channels = channel != null ? [channel, ''] : [''];
+  // macOS 只发 universal 包（arm64 + x86_64 合体），资产名里带 universal
+  final archNames = platform == 'macos' ? ['universal', arch] : [arch];
 
   for (final ch in channels) {
-    for (final ext in exts) {
-      final suffix = ch.isNotEmpty ? '_$ch.$ext' : '.$ext';
-      final name =
-          'afrp-oidc-client_${release.version}_${platform}_$arch$suffix';
-      if (release.assetNames.contains(name)) {
-        final url = githubDownloadUrl(release, name);
-        return [name, url];
+    for (final archName in archNames) {
+      for (final ext in exts) {
+        final suffix = ch.isNotEmpty ? '_$ch.$ext' : '.$ext';
+        final name =
+            'afrp-oidc-client_${release.version}_${platform}_$archName$suffix';
+        if (release.assetNames.contains(name)) {
+          final url = githubDownloadUrl(release, name);
+          return [name, url];
+        }
       }
     }
   }

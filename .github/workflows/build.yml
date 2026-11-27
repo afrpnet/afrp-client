@@ -205,11 +205,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  build-macos-arm64:
+  build-macos:
     needs: create-release
+    # universal（arm64 + x86_64）必须由 Apple Silicon 主机产出：x86_64 切片靠
+    # Flutter 的 x86_64 版 gen_snapshot 交叉编译，Intel 主机反之无法产出 arm64 切片。
     runs-on: macos-latest
     timeout-minutes: 90
-    # arm64 runner 偶发排队不到，不让单个平台拖垮整轮发版（缺产物时用 rebuild-macos-arm64.yml 补建）
+    # arm64 runner 偶发排队不到，不让单个平台拖垮整轮发版（缺产物时用 rebuild-macos.yml 补建）
     continue-on-error: true
     env:
       FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
@@ -222,75 +224,59 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - name: Download frpc (macOS ARM64)
+      - name: Download frpc (macOS universal)
         run: |
           bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
           mkdir -p assets/frpc/macos
-          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_arm64.tar.gz" -o frpc_arm64.tar.gz
-          mkdir -p /tmp/frpc_arm64 && tar -xzf frpc_arm64.tar.gz -C /tmp/frpc_arm64
-          tar -czf assets/frpc/macos/frpc_darwin_arm64.tar.gz -C /tmp/frpc_arm64/frp_${FRPC_VERSION}_darwin_arm64 frpc
-          # App 在 macOS 固定读取 amd64 包（arm64 机器经 Rosetta 运行），必须一并刷新
-          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_amd64.tar.gz" -o frpc_amd64.tar.gz
-          mkdir -p /tmp/frpc_mac_amd64 && tar -xzf frpc_amd64.tar.gz -C /tmp/frpc_mac_amd64
-          tar -czf assets/frpc/macos/frpc_darwin_amd64.tar.gz -C /tmp/frpc_mac_amd64/frp_${FRPC_VERSION}_darwin_amd64 frpc
+          # App 在 macOS 按运行时 CPU 架构选内置核心，两个架构的包都要带上
+          for arch in arm64 amd64; do
+            curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_${arch}.tar.gz" -o "frpc_${arch}.tar.gz"
+            rm -rf "/tmp/frpc_${arch}" && mkdir -p "/tmp/frpc_${arch}"
+            tar -xzf "frpc_${arch}.tar.gz" -C "/tmp/frpc_${arch}"
+            tar -czf "assets/frpc/macos/frpc_darwin_${arch}.tar.gz" -C "/tmp/frpc_${arch}/frp_${FRPC_VERSION}_darwin_${arch}" frpc
+          done
+
+      - name: Prepare assets for macOS build
+        run: |
+          set -e
+          # macOS 包只带 macOS 版内核：Windows / Linux 的 frpc 二进制在 macOS 上永远用不到，
+          # 留在包里白占 ~34MB。构建前移出资源目录并注释掉 pubspec 对应条目，
+          # 改包内资源会破坏 .app 签名，所以只能在构建前做。
+          mkdir -p build/frpc-hold
+          for d in windows linux; do
+            [ -d "assets/frpc/$d" ] && mv "assets/frpc/$d" "build/frpc-hold/$d"
+          done
+          sed -i -E 's@^([[:space:]]*-[[:space:]]+assets/frpc/(windows|linux)/.*)$@#\1@' pubspec.yaml
+          grep -n 'assets/frpc' pubspec.yaml || true
+
       - name: Build macOS
+        env:
+          # 显式声明双架构：Xcode 27 起 ARCHS_STANDARD 可能只保留 arm64
+          FLUTTER_XCODE_ARCHS: "arm64 x86_64"
         run: flutter build macos --release
-      - name: Verify architecture (must be arm64)
+      - name: Verify architecture (must be universal)
         run: |
           set -e
           BIN="build/macos/Build/Products/Release/AFRP OIDC Client.app/Contents/MacOS/AFRP OIDC Client"
-          ARCHS=$(lipo -archs "$BIN")
-          echo "archs: $ARCHS"
-          case "$ARCHS" in
-            *arm64*) echo "✅ 确认是 arm64 构建" ;;
-            *) echo "::error::不是 arm64 构建（runner 可能落到 Intel 镜像）: $ARCHS"; exit 1 ;;
-          esac
+          AOT="build/macos/Build/Products/Release/AFRP OIDC Client.app/Contents/Frameworks/App.framework/Versions/A/App"
+          check_universal() {
+            ARCHS=$(lipo -archs "$1")
+            echo "archs($1): $ARCHS"
+            case "$ARCHS" in
+              *arm64*x86_64*|*x86_64*arm64*) ;;
+              *) echo "::error::不是 universal 构建: $ARCHS"; return 1 ;;
+            esac
+          }
+          check_universal "$BIN"
+          check_universal "$AOT"
+          echo "✅ 确认是 universal（arm64 + x86_64）构建"
       - name: Package & Upload
         run: |
           set -e
           VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
           mkdir -p dist
           bash tool/make-dmg.sh "build/macos/Build/Products/Release/AFRP OIDC Client.app" \
-            "dist/afrp-oidc-client_${VER}_macos_arm64.dmg"
-          ls -la dist/
-          gh release upload "v$VER" dist/* --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  build-macos-amd64:
-    needs: create-release
-    # macos-15-intel 是 GitHub 托管的最后一个 x86_64 macOS 镜像（支持到 2027-08）；
-    # macos-latest 现指向 arm64，无法原生产出 Intel 版，故 Intel 版必须固定该标签。
-    runs-on: macos-15-intel
-    timeout-minutes: 90
-    env:
-      FRPC_VERSION: ${{ needs.create-release.outputs.frpc_version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Verify version consistency
-        run: 'bash tool/sync-version.sh --check "${GITHUB_REF_NAME#v}"'
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - name: Download frpc (macOS AMD64)
-        run: |
-          bash tool/pin-frpc-version.sh "${FRPC_VERSION}"
-          mkdir -p assets/frpc/macos
-          curl -sL "https://github.com/fatedier/frp/releases/download/v${FRPC_VERSION}/frp_${FRPC_VERSION}_darwin_amd64.tar.gz" -o frpc_amd64.tar.gz
-          mkdir -p /tmp/frpc_amd64 && tar -xzf frpc_amd64.tar.gz -C /tmp/frpc_amd64
-          # 运行时（frpc_manager.dart）与 pubspec 固定读取 frpc_darwin_amd64.tar.gz，文件名须一致
-          tar -czf assets/frpc/macos/frpc_darwin_amd64.tar.gz -C /tmp/frpc_amd64/frp_${FRPC_VERSION}_darwin_amd64 frpc
-      - name: Build macOS
-        run: flutter build macos --release
-      - name: Package & Upload
-        run: |
-          set -e
-          VER=$(grep '^version:' pubspec.yaml | sed -E 's/version: ([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-          mkdir -p dist
-          bash tool/make-dmg.sh "build/macos/Build/Products/Release/AFRP OIDC Client.app" \
-            "dist/afrp-oidc-client_${VER}_macos_amd64.dmg"
+            "dist/afrp-oidc-client_${VER}_macos_universal.dmg"
           ls -la dist/
           gh release upload "v$VER" dist/* --clobber
         env:
@@ -873,7 +859,7 @@ jobs:
 
   # 上传构建产物到云存储并更新 manifest
   upload-and-update-manifest:
-    needs: [build-windows, build-windows-arm64, build-macos-arm64, build-macos-amd64, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
+    needs: [build-windows, build-windows-arm64, build-macos, build-linux-amd64, build-linux-arm64, build-android, build-ohos, build-openwrt]
     runs-on: ubuntu-latest
     if: always() && github.event_name != 'pull_request'
     steps:
@@ -1029,11 +1015,12 @@ jobs:
           # 列出 R2 app/ 目录下的所有文件
           FILES=$(aws s3 ls "s3://${R2_BUCKET}/app/" --endpoint-url "$ENDPOINT" 2>/dev/null | awk '{print $4}' || echo "")
 
-          # macOS 产物已从 zip 换成 dmg，遗留 zip 的类型键不会再有新版对应，直接删掉
+          # macOS 产物已从 zip 换成 dmg，遗留 zip 的类型键不会再有新版对应，直接删掉；
+          # macOS 又从 arm64/amd64 两份合并成 universal 一份，旧的类型键同样作废
           for FILE in $FILES; do
             case "$FILE" in
-              afrp-oidc-client_*_macos_*.zip)
-                echo "删除遗留 macOS zip: $FILE"
+              afrp-oidc-client_*_macos_*.zip|afrp-oidc-client_*_macos_arm64.dmg|afrp-oidc-client_*_macos_amd64.dmg)
+                echo "删除遗留 macOS 产物: $FILE"
                 aws s3 rm "s3://${R2_BUCKET}/app/$FILE" --endpoint-url "$ENDPOINT" 2>/dev/null || true
                 ;;
             esac
