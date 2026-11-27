@@ -242,11 +242,15 @@ jobs:
           # macOS 包只带 macOS 版内核：Windows / Linux 的 frpc 二进制在 macOS 上永远用不到，
           # 留在包里白占 ~34MB。构建前移出资源目录并注释掉 pubspec 对应条目，
           # 改包内资源会破坏 .app 签名，所以只能在构建前做。
+          # 注意：macOS runner 是 BSD sed，-i 必须带后缀参数，不能写成 GNU 的 -i -E
           mkdir -p build/frpc-hold
           for d in windows linux; do
-            [ -d "assets/frpc/$d" ] && mv "assets/frpc/$d" "build/frpc-hold/$d"
+            if [ -d "assets/frpc/$d" ]; then
+              mv "assets/frpc/$d" "build/frpc-hold/$d"
+            fi
           done
-          sed -i -E 's@^([[:space:]]*-[[:space:]]+assets/frpc/(windows|linux)/.*)$@#\1@' pubspec.yaml
+          sed -i.bak -E 's@^([[:space:]]*-[[:space:]]+assets/frpc/(windows|linux)/.*)$@#\1@' pubspec.yaml
+          rm -f pubspec.yaml.bak
           grep -n 'assets/frpc' pubspec.yaml || true
 
       - name: Build macOS
